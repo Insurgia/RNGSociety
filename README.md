@@ -8,7 +8,7 @@ This repo now includes a production-ready single-page calculator to help TCG str
 
 - break-even starting price
 - recommended start with configurable profit buffer
-- estimated profit after commission, payment processing, and shipping allocation
+- estimated profit after platform fee and shipping allocation
 
 ### Run locally
 
@@ -21,8 +21,7 @@ Then open `http://localhost:4173`.
 ### Features shipped
 
 - configurable shipping-per-card math
-- configurable commission fee percentage
-- configurable payment processing fee (`2.9% + $0.30` by default)
+- configurable platform fee percentage
 - recommended start rounded to nearest `$0.25`
 - detailed expandable cost breakdown
 - copy-to-clipboard listing snippet
