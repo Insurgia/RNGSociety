@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RNG Society | TCG Stream Profit Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div class="logo">R</div>
+        <div>
+          <p class="eyebrow">RNG Society</p>
+          <h1>TCG Stream Profit Calculator</h1>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>Inputs</h2>
+        <div class="grid two-col">
+          <label class="field">
+            <span>Card Cost</span>
+            <div class="input-wrap"><span>$</span><input id="cardCost" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          </label>
+          <label class="field">
+            <span>Freebie Cost</span>
+            <div class="input-wrap"><span>$</span><input id="freebieCost" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          </label>
+        </div>
+
+        <div class="grid three-col shipping">
+          <label class="field">
+            <span>Shipping Paid</span>
+            <div class="input-wrap"><span>$</span><input id="shipFee" type="number" min="0" step="0.25" value="2" /></div>
+          </label>
+          <label class="field">
+            <span>Cards / Order</span>
+            <div class="input-wrap"><input id="cardsPerOrder" type="number" min="1" step="1" value="5" /></div>
+          </label>
+          <div class="pill" id="perCardShip">$0.40 / card</div>
+        </div>
+
+        <div class="grid two-col">
+          <label class="field">
+            <span>Platform Fee (%)</span>
+            <div class="input-wrap"><input id="platformFeePct" type="number" min="0" max="100" step="0.1" value="8" /></div>
+          </label>
+          <div>
+            <p class="buffer-label">Profit Buffer</p>
+            <div class="buffer-row" role="group" aria-label="Profit buffer options">
+              <button class="buffer-btn" data-buffer="0.1">10%</button>
+              <button class="buffer-btn active" data-buffer="0.15">15%</button>
+              <button class="buffer-btn" data-buffer="0.2">20%</button>
+              <button class="buffer-btn" data-buffer="0.25">25%</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="results">
+        <article class="metric warning">
+          <p>Break-Even Start</p>
+          <h3 id="breakEvenVal">—</h3>
+          <small>Minimum safe start price</small>
+        </article>
+        <article class="metric info">
+          <p>Recommended Start</p>
+          <h3 id="recommendVal">—</h3>
+          <small id="recommendHint">Enter card cost to calculate</small>
+        </article>
+        <article class="metric success" id="profitCard">
+          <p>Estimated Profit</p>
+          <h3 id="profitVal">—</h3>
+          <small>At recommended start</small>
+        </article>
+      </section>
+
+      <section class="card breakdown-card">
+        <button class="breakdown-toggle" id="breakdownToggle" aria-expanded="false">Detailed Breakdown <span>▼</span></button>
+        <div id="breakdownPanel" class="breakdown-panel">
+          <div id="breakdownInner" class="breakdown-inner"></div>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="copyBtn" class="btn primary" disabled>Copy Listing Snippet</button>
+        <button id="resetBtn" class="btn secondary">Reset</button>
+      </section>
+
+      <footer class="footer">Built for Whatnot TCG single streams. Prices shown in CAD.</footer>
+      <div class="toast" id="toast"></div>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
