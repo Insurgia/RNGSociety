@@ -26,8 +26,8 @@
   let currentRecommended = null;
   let toastTimeout;
 
-  const STORAGE_KEY = 'rngsociety-profit-calc-v1';
-
+  const STORAGE_KEY = 'rngsociety-profit-calc-v2';
+  
   const toNumber = (value) => {
     const n = Number.parseFloat(value);
     return Number.isFinite(n) ? n : NaN;
