@@ -3,107 +3,98 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RNG Society | Seller Tools</title>
+    <title>RNG Society | TCG Stream Profit Calculator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="app">
-      <header class="topbar">
+    <main class="container">
+      <header class="header">
         <div class="logo">R</div>
         <div>
-          <p class="brand">RNG Society</p>
-          <h1>Seller Tools</h1>
+          <p class="eyebrow">RNG Society</p>
+          <h1>TCG Stream Profit Calculator</h1>
         </div>
-        <p class="build-tag" title="Build version">BUILD v5</p>
       </header>
 
-      <section id="authPanel" class="panel"></section>
+      <section class="card">
+        <h2>Inputs</h2>
+        <div class="grid two-col">
+          <label class="field">
+            <span>Card Cost</span>
+            <div class="input-wrap"><span>$</span><input id="cardCost" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          </label>
+          <label class="field">
+            <span>Freebie Cost</span>
+            <div class="input-wrap"><span>$</span><input id="freebieCost" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          </label>
+        </div>
 
-      <nav class="module-nav" aria-label="Tools">
-        <button class="module-btn active" data-module="singles">Singles Calculator</button>
-        <button class="module-btn" data-module="bagBuilder">Bag Builder <span class="pro-pill">PRO</span></button>
-        <button class="module-btn" data-module="purchase">Purchase Calculator</button>
-      </nav>
+        <div class="grid three-col shipping">
+          <label class="field">
+            <span>Shipping Paid</span>
+            <div class="input-wrap"><span>$</span><input id="shipFee" type="number" min="0" step="0.25" value="2" /></div>
+          </label>
+          <label class="field">
+            <span>Cards / Order</span>
+            <div class="input-wrap"><input id="cardsPerOrder" type="number" min="1" step="1" value="5" /></div>
+          </label>
+          <div class="pill" id="perCardShip">$0.40 / card</div>
+        </div>
 
-      <section id="singlesModule">
-        <section class="panel">
-          <h2>Singles Calculator</h2>
-          <div class="grid two">
-            <label class="field"><span>Card Cost ($)</span><input id="cardCost" type="number" min="0" step="0.01" placeholder="0.00" /></label>
-            <label class="field"><span>Freebie Cost ($)</span><input id="freebieCost" type="number" min="0" step="0.01" placeholder="0.00" /></label>
-          </div>
-          <div class="grid three">
-            <label class="field"><span>Shipping Paid ($)</span><input id="shipFee" type="number" min="0" step="0.25" value="2.00" /></label>
-            <label class="field"><span>Cards / Order</span><input id="cardsPerOrder" type="number" min="1" step="1" value="5" /></label>
-            <div class="ship-pill" id="perCardShip">Shipping / Card: $0.40</div>
-          </div>
-          <div class="grid three">
-            <label class="field"><span>Commission (%)</span><input id="commissionPct" type="number" min="0" max="100" step="0.1" value="8.0" /></label>
-            <label class="field highlight"><span>Processing (%)</span><input id="processingPct" type="number" min="0" max="100" step="0.1" value="2.9" /></label>
-            <label class="field highlight"><span>Processing Fixed ($)</span><input id="processingFixed" type="number" min="0" step="0.01" value="0.30" /></label>
-          </div>
-          <div class="buffer-wrap">
-            <p>Profit Buffer</p>
-            <div class="buffer-buttons" role="group" aria-label="Profit buffer options">
-              <button class="buffer active" data-buffer="0.10">10%</button>
-              <button class="buffer" data-buffer="0.15">15%</button>
-              <button class="buffer" data-buffer="0.20">20%</button>
-              <button class="buffer" data-buffer="0.25">25%</button>
+        <div class="grid two-col">
+          <label class="field">
+            <span>Platform Fee (%)</span>
+            <div class="input-wrap"><input id="platformFeePct" type="number" min="0" max="100" step="0.1" value="8" /></div>
+          </label>
+          <div>
+            <p class="buffer-label">Profit Buffer</p>
+            <div class="buffer-row" role="group" aria-label="Profit buffer options">
+              <button class="buffer-btn" data-buffer="0.1">10%</button>
+              <button class="buffer-btn active" data-buffer="0.15">15%</button>
+              <button class="buffer-btn" data-buffer="0.2">20%</button>
+              <button class="buffer-btn" data-buffer="0.25">25%</button>
             </div>
           </div>
-        </section>
-
-        <section class="result-grid">
-          <article class="metric warn"><p>Break-even Start</p><h3 id="breakEvenVal">—</h3></article>
-          <article class="metric info"><p>Recommended Start</p><h3 id="recommendedVal">—</h3><small id="recommendedHint">Enter card cost</small></article>
-          <article class="metric good" id="profitCard"><p>Estimated Profit</p><h3 id="profitVal">—</h3><small>At recommended start</small></article>
-        </section>
-
-        <section class="panel">
-          <button id="breakdownToggle" class="toggle" aria-expanded="false">Show detailed breakdown <span>▼</span></button>
-          <div id="breakdownPanel" class="breakdown-panel"><div id="breakdownInner" class="breakdown-inner"></div></div>
-        </section>
-
-        <section class="actions">
-          <button id="copyBtn" class="btn primary" disabled>Copy listing snippet</button>
-          <button id="resetBtn" class="btn secondary">Reset</button>
-        </section>
-      </section>
-
-
-
-      <section id="purchaseModule" class="hidden">
-        <section class="panel">
-          <h2>Purchase Calculator (Collection / Bundle Analyzer)</h2>
-          <div id="purchaseCalculatorRoot"></div>
-        </section>
-      </section>
-
-      <section id="bagBuilderModule" class="hidden">
-        <section id="bagUpsell" class="panel hidden"></section>
-        <div id="bagAppShell" class="hidden">
-          <nav class="sub-nav">
-            <button class="sub-btn active" data-bag-view="dashboard">Bags</button>
-            <button class="sub-btn" data-bag-view="customers">Customers</button>
-            <button class="sub-btn" data-bag-view="settings">Settings</button>
-            <button class="sub-btn hidden" id="adminTabBtn" data-bag-view="admin">Admin</button>
-          </nav>
-          <section id="bagDashboard" class="panel"></section>
-          <section id="bagDetail" class="panel hidden"></section>
-          <section id="bagCustomers" class="panel hidden"></section>
-          <section id="bagSettings" class="panel hidden"></section>
-          <section id="bagAdmin" class="panel hidden"></section>
         </div>
       </section>
 
-      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <section class="results">
+        <article class="metric warning">
+          <p>Break-Even Start</p>
+          <h3 id="breakEvenVal">—</h3>
+          <small>Minimum safe start price</small>
+        </article>
+        <article class="metric info">
+          <p>Recommended Start</p>
+          <h3 id="recommendVal">—</h3>
+          <small id="recommendHint">Enter card cost to calculate</small>
+        </article>
+        <article class="metric success" id="profitCard">
+          <p>Estimated Profit</p>
+          <h3 id="profitVal">—</h3>
+          <small>At recommended start</small>
+        </article>
+      </section>
+
+      <section class="card breakdown-card">
+        <button class="breakdown-toggle" id="breakdownToggle" aria-expanded="false">Detailed Breakdown <span>▼</span></button>
+        <div id="breakdownPanel" class="breakdown-panel">
+          <div id="breakdownInner" class="breakdown-inner"></div>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="copyBtn" class="btn primary" disabled>Copy Listing Snippet</button>
+        <button id="resetBtn" class="btn secondary">Reset</button>
+      </section>
+
+      <footer class="footer">Built for Whatnot TCG single streams. Prices shown in CAD.</footer>
+      <div class="toast" id="toast"></div>
     </main>
 
-    <script src="bagBuilderCore.js"></script>
-    <script src="purchaseCalculatorCore.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
