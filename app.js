@@ -72,6 +72,12 @@
 
   const round2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
   const currency = (value) => `$${round2(value).toFixed(2)}`;
+  const roundUpDollar = (value) => Math.ceil(Number(value) || 0);
+  const singleCurrency = (value) => `$${roundUpDollar(value)}`;
+  const signedSingleCurrency = (value) => {
+    const rounded = roundUpDollar(value);
+    return `${rounded >= 0 ? '+' : '-'}$${Math.abs(rounded)}`;
+  };
   const ceilQuarter = (value) => Math.ceil(value * 4) / 4;
 
   function showToast(message) {
@@ -85,7 +91,7 @@
     const shipFee = Math.max(0, toNumber(els.shipFee.value) || 0);
     const cards = Math.max(1, Math.floor(toNumber(els.cardsPerOrder.value) || 1));
     const perCard = round2(shipFee / cards);
-    els.perCardShip.textContent = `${currency(perCard)} / card`;
+    els.perCardShip.textContent = `${singleCurrency(perCard)} / card`;
     return perCard;
   }
 
@@ -129,15 +135,15 @@
     const profitClass = data.profit >= 0 ? 'profit-pos' : 'profit-neg';
 
     els.breakdownInner.innerHTML = `
-      <div class="row"><span>Sale price</span><strong class="revenue">${currency(data.recommended)}</strong></div>
-      <div class="row"><span>Commission (${data.commissionPct.toFixed(1)}%)</span><strong class="cost">-${currency(data.commission)}</strong></div>
-      <div class="row"><span>Processing (${data.processingPct.toFixed(1)}% + ${currency(data.processingFixed)})</span><strong class="cost">-${currency(data.processing)}</strong></div>
-      <div class="row"><span>Total fees</span><strong class="cost">-${currency(data.totalFees)}</strong></div>
-      <div class="row"><span>Net earnings</span><strong class="revenue">${currency(data.netEarnings)}</strong></div>
-      <div class="row"><span>Card cost</span><strong class="cost">-${currency(data.cardCost)}</strong></div>
-      <div class="row"><span>Freebie cost</span><strong class="cost">-${currency(data.freebieCost)}</strong></div>
-      <div class="row"><span>Shipping / card</span><strong class="cost">-${currency(data.perCardShip)}</strong></div>
-      <div class="row total"><span>Net profit</span><strong class="${profitClass}">${data.profit >= 0 ? '+' : ''}${currency(data.profit)}</strong></div>
+      <div class="row"><span>Sale price</span><strong class="revenue">${singleCurrency(data.recommended)}</strong></div>
+      <div class="row"><span>Commission (${data.commissionPct.toFixed(1)}%)</span><strong class="cost">-${singleCurrency(data.commission)}</strong></div>
+      <div class="row"><span>Processing (${data.processingPct.toFixed(1)}% + ${singleCurrency(data.processingFixed)})</span><strong class="cost">-${singleCurrency(data.processing)}</strong></div>
+      <div class="row"><span>Total fees</span><strong class="cost">-${singleCurrency(data.totalFees)}</strong></div>
+      <div class="row"><span>Net earnings</span><strong class="revenue">${singleCurrency(data.netEarnings)}</strong></div>
+      <div class="row"><span>Card cost</span><strong class="cost">-${singleCurrency(data.cardCost)}</strong></div>
+      <div class="row"><span>Freebie cost</span><strong class="cost">-${singleCurrency(data.freebieCost)}</strong></div>
+      <div class="row"><span>Shipping / card</span><strong class="cost">-${singleCurrency(data.perCardShip)}</strong></div>
+      <div class="row total"><span>Net profit</span><strong class="${profitClass}">${signedSingleCurrency(data.profit)}</strong></div>
     `;
   }
 
@@ -177,9 +183,9 @@
     const calc = calculateProfitForSale(recommended, hardCost, commissionPct, processingPct, processingFixed);
 
     currentRecommended = recommended;
-    els.breakEvenVal.textContent = currency(breakEven);
-    els.recommendVal.textContent = currency(recommended);
-    els.profitVal.textContent = `${calc.profit >= 0 ? '+' : ''}${currency(calc.profit)}`;
+    els.breakEvenVal.textContent = singleCurrency(breakEven);
+    els.recommendVal.textContent = singleCurrency(recommended);
+    els.profitVal.textContent = signedSingleCurrency(calc.profit);
     els.recommendHint.textContent = `${Math.round(currentBuffer * 100)}% buffer + rounded to nearest $0.25`;
     els.profitCard.classList.toggle('negative', calc.profit < 0);
     els.copyBtn.disabled = false;
@@ -267,7 +273,7 @@
 
   els.copyBtn.addEventListener('click', async () => {
     if (!Number.isFinite(currentRecommended)) return;
-    const snippet = `Start: ${currency(currentRecommended)} | Break-even: ${els.breakEvenVal.textContent} | Fees: ${els.commissionPct.value}% + ${els.processingPct.value}% + ${currency(toNumber(els.processingFixed.value) || 0)}`;
+    const snippet = `Start: ${singleCurrency(currentRecommended)} | Break-even: ${els.breakEvenVal.textContent} | Fees: ${els.commissionPct.value}% + ${els.processingPct.value}% + ${singleCurrency(toNumber(els.processingFixed.value) || 0)}`;
 
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(snippet);
