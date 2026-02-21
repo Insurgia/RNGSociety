@@ -656,10 +656,11 @@
     const now = new Date().toISOString();
     const base = window.location.origin + window.location.pathname;
     const deepLink = `${base}?module=bags&bag=${encodeURIComponent(bag.id)}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(deepLink)}`;
+    const qrUrl = qrDataUrl(deepLink, 280);
 
     els.bagLabel.hidden = false;
-    els.bagQrImg.src = qrUrl;
+    els.bagQrImg.src = qrUrl || '';
+    els.bagQrImg.alt = qrUrl ? 'Bag QR code' : 'QR unavailable';
     els.bagLabelMeta.innerHTML = `
       <div class="row"><span>Bag ID</span><strong>${bag.bagId}</strong></div>
       <div class="row"><span>Customer</span><strong>${customer.username}</strong></div>
@@ -693,15 +694,10 @@
     return window.jspdf.jsPDF;
   }
 
-  async function urlToDataUrl(url) {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+  function qrDataUrl(text, size = 320) {
+    if (!window.QRious) return null;
+    const qr = new window.QRious({ value: text, size, level: 'M' });
+    return qr.toDataURL('image/png');
   }
 
   async function printBagLabel() {
@@ -709,7 +705,7 @@
     if (!bag) return;
     const customer = bagDb.customers.find((c) => c.id === bag.customerId) || { username: 'unknown', platform: '' };
     const deepLink = `${window.location.origin + window.location.pathname}?module=bags&bag=${encodeURIComponent(bag.id)}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(deepLink)}`;
+    const qrUrl = qrDataUrl(deepLink, 320);
 
     try {
       const jsPDF = await ensureJsPdf();
@@ -735,10 +731,9 @@
       pdf.setTextColor(80, 80, 80); pdf.text('Status', 26, 118); pdf.setTextColor(20, 20, 20); pdf.text(String(bag.status), 110, 118);
       pdf.setTextColor(80, 80, 80); pdf.text('Bin', 26, 134); pdf.setTextColor(20, 20, 20); pdf.text(String(bag.binLocation || 'n/a'), 110, 134);
 
-      try {
-        const qrDataUrl = await urlToDataUrl(qrUrl);
-        pdf.addImage(qrDataUrl, 'PNG', 72, 152, 144, 144);
-      } catch {
+      if (qrUrl) {
+        pdf.addImage(qrUrl, 'PNG', 72, 152, 144, 144);
+      } else {
         pdf.setTextColor(160, 40, 40);
         pdf.text('QR unavailable', 110, 230);
       }
