@@ -51,6 +51,11 @@
     markShippingPaidBtn: document.getElementById('markShippingPaidBtn'),
     bagLedger: document.getElementById('bagLedger'),
     bagAudit: document.getElementById('bagAudit'),
+    generateLabelBtn: document.getElementById('generateLabelBtn'),
+    printLabelBtn: document.getElementById('printLabelBtn'),
+    bagLabel: document.getElementById('bagLabel'),
+    bagLabelMeta: document.getElementById('bagLabelMeta'),
+    bagQrImg: document.getElementById('bagQrImg'),
     bagStatusSelect: document.getElementById('bagStatusSelect'),
     customerList: document.getElementById('customerList'),
     settingDeadlineDays: document.getElementById('settingDeadlineDays'),
@@ -518,6 +523,7 @@
     const items = bagDb.items.filter((i) => i.bagId === bag.id);
     const logs = bagDb.auditLogs.filter((l) => l.bagId === bag.id).slice(-8).reverse();
     const totals = core.buildTotals(items);
+    els.bagLabel.hidden = true;
 
     const hvThreshold = Number(bagDb.settings.highValueThreshold || 150);
     const hvBadge = totals.totalValue >= hvThreshold ? ' <span class="pro-pill">HIGH VALUE</span>' : '';
@@ -627,6 +633,44 @@
     showToast('Shipping marked paid');
   }
 
+  function generateBagLabel() {
+    const core = window.BagBuilderCore;
+    const bag = bagDb.bags.find((b) => b.id === selectedBagId);
+    if (!bag) return;
+    const customer = bagDb.customers.find((c) => c.id === bag.customerId) || { username: 'unknown', platform: '' };
+    const now = new Date().toISOString();
+    const base = window.location.origin + window.location.pathname;
+    const deepLink = `${base}?module=bags&bag=${encodeURIComponent(bag.id)}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(deepLink)}`;
+
+    els.bagLabel.hidden = false;
+    els.bagQrImg.src = qrUrl;
+    els.bagLabelMeta.innerHTML = `
+      <div class="row"><span>Bag ID</span><strong>${bag.bagId}</strong></div>
+      <div class="row"><span>Customer</span><strong>${customer.username}</strong></div>
+      <div class="row"><span>Platform</span><strong>${customer.platform || 'n/a'}</strong></div>
+      <div class="row"><span>Status</span><strong>${bag.status}</strong></div>
+      <div class="row"><span>Bin Location</span><strong>${bag.binLocation || 'n/a'}</strong></div>
+    `;
+
+    bagDb.auditLogs.push({
+      id: core.uid(),
+      bagId: bag.id,
+      event: 'GENERATE_LABEL',
+      payload: { deepLink },
+      createdAt: now,
+      actor: 'local_user',
+    });
+    saveBagDb();
+    renderBagDetail();
+    showToast('Bag label generated');
+  }
+
+  function printBagLabel() {
+    if (els.bagLabel.hidden) generateBagLabel();
+    window.print();
+  }
+
   function updateBagStatus() {
     const core = window.BagBuilderCore;
     const bag = bagDb.bags.find((b) => b.id === selectedBagId);
@@ -688,6 +732,8 @@
     els.exportBagsCsvBtn.addEventListener('click', exportBagsCsv);
     els.addBagItemBtn.addEventListener('click', addBagItem);
     els.markShippingPaidBtn.addEventListener('click', markShippingPaid);
+    els.generateLabelBtn.addEventListener('click', generateBagLabel);
+    els.printLabelBtn.addEventListener('click', printBagLabel);
     els.bagStatusSelect.addEventListener('change', updateBagStatus);
     els.saveBagSettingsBtn.addEventListener('click', saveBagSettings);
   }
