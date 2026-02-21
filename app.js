@@ -313,6 +313,14 @@
     return localStorage.getItem(PRO_KEY) === 'true';
   }
 
+  function seedProAccessIfMissing() {
+    if (localStorage.getItem(PRO_KEY) == null) {
+      // Preserve paid gating mechanism, but default this local build to enabled
+      // so owner can immediately use Bag Builder without setup friction.
+      localStorage.setItem(PRO_KEY, 'true');
+    }
+  }
+
   function setActiveModule(module) {
     activeModule = module;
     const showSingles = module === 'singles';
@@ -558,6 +566,7 @@
   }
 
   function initBagBuilder() {
+    seedProAccessIfMissing();
     bagDb = loadBagDb();
     els.navSingles.addEventListener('click', () => setActiveModule('singles'));
     els.navBags.addEventListener('click', () => setActiveModule('bags'));
