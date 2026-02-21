@@ -15,10 +15,16 @@
         <div class="logo">R</div>
         <div>
           <p class="eyebrow">RNG Society</p>
-          <h1>TCG Stream Profit Calculator</h1>
+          <h1>Streamer Toolkit</h1>
         </div>
       </header>
 
+      <nav class="top-nav" aria-label="Module navigation">
+        <button id="navSingles" class="nav-btn active" data-module="singles">Singles Calculator</button>
+        <button id="navBags" class="nav-btn" data-module="bags">Bag Builder <span class="pro-pill">PRO</span></button>
+      </nav>
+
+      <section id="singlesModule" class="module module-active">
       <section class="card">
         <h2>Inputs</h2>
         <div class="grid two-col">
@@ -99,11 +105,51 @@
         <button id="copyBtn" class="btn primary" disabled>Copy Listing Snippet</button>
         <button id="resetBtn" class="btn secondary">Reset</button>
       </section>
+      </section>
+
+      <section id="bagsModule" class="module" hidden>
+        <section id="bagUpsell" class="card">
+          <h2>Bag Builder (Pro)</h2>
+          <p class="muted-copy">Bag Builder tracks customer bags across streams with status, ledger totals, and dispute-ready history.</p>
+          <p class="muted-copy">Upgrade to Pro to unlock this module.</p>
+        </section>
+
+        <section id="bagApp" class="card" hidden>
+          <h2>Bag Builder Dashboard</h2>
+          <div class="grid two-col">
+            <article class="metric info">
+              <p>Active Bags</p>
+              <h3 id="bagActiveCount">0</h3>
+            </article>
+            <article class="metric warning">
+              <p>Overdue Bags</p>
+              <h3 id="bagOverdueCount">0</h3>
+            </article>
+          </div>
+          <div class="grid two-col" style="margin-top:12px;">
+            <label class="field">
+              <span>Customer Username</span>
+              <div class="input-wrap"><input id="bagCustomerUsername" type="text" placeholder="whatnot_user" /></div>
+            </label>
+            <label class="field">
+              <span>Platform</span>
+              <div class="input-wrap"><input id="bagCustomerPlatform" type="text" placeholder="whatnot" value="whatnot" /></div>
+            </label>
+          </div>
+          <section class="actions" style="margin-top:12px;">
+            <button id="createBagBtn" class="btn primary">Create Bag</button>
+            <button id="exportBagsCsvBtn" class="btn secondary">Export Bags CSV</button>
+          </section>
+          <div id="bagList" class="breakdown-inner" style="margin-top:12px;"></div>
+        </section>
+      </section>
 
       <footer class="footer">Built for Whatnot TCG single streams. Prices shown in CAD.</footer>
       <div class="toast" id="toast"></div>
     </main>
 
+    <script src="bagBuilderCore.js"></script>
+    <script src="purchaseCalculatorCore.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

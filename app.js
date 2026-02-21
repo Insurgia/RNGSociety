@@ -22,6 +22,19 @@
     resetBtn: document.getElementById('resetBtn'),
     toast: document.getElementById('toast'),
     bufferBtns: [...document.querySelectorAll('.buffer-btn')],
+    navSingles: document.getElementById('navSingles'),
+    navBags: document.getElementById('navBags'),
+    singlesModule: document.getElementById('singlesModule'),
+    bagsModule: document.getElementById('bagsModule'),
+    bagUpsell: document.getElementById('bagUpsell'),
+    bagApp: document.getElementById('bagApp'),
+    createBagBtn: document.getElementById('createBagBtn'),
+    exportBagsCsvBtn: document.getElementById('exportBagsCsvBtn'),
+    bagCustomerUsername: document.getElementById('bagCustomerUsername'),
+    bagCustomerPlatform: document.getElementById('bagCustomerPlatform'),
+    bagList: document.getElementById('bagList'),
+    bagActiveCount: document.getElementById('bagActiveCount'),
+    bagOverdueCount: document.getElementById('bagOverdueCount'),
   };
 
   let currentBuffer = 0.15;
@@ -29,6 +42,11 @@
   let toastTimeout;
 
   const STORAGE_KEY = 'rngsociety-profit-calc-v3';
+  const BAG_DB_KEY = 'rngsociety-bag-builder-v1';
+  const PRO_KEY = 'rngsociety-pro-enabled';
+
+  let activeModule = 'singles';
+  let bagDb = null;
 
   const toNumber = (value) => {
     const n = Number.parseFloat(value);
@@ -258,7 +276,149 @@
     els.cardCost.focus();
   });
 
+  function loadBagDb() {
+    const core = window.BagBuilderCore;
+    if (!core) return core?.createEmptyDb?.() || {};
+    try {
+      const raw = localStorage.getItem(BAG_DB_KEY);
+      const parsed = raw ? JSON.parse(raw) : core.createEmptyDb();
+      return core.migrateDb(parsed);
+    } catch {
+      return core.createEmptyDb();
+    }
+  }
+
+  function saveBagDb() {
+    localStorage.setItem(BAG_DB_KEY, JSON.stringify(bagDb));
+  }
+
+  function isProEnabled() {
+    return localStorage.getItem(PRO_KEY) === 'true';
+  }
+
+  function setActiveModule(module) {
+    activeModule = module;
+    const showSingles = module === 'singles';
+    els.singlesModule.hidden = !showSingles;
+    els.bagsModule.hidden = showSingles;
+    els.navSingles.classList.toggle('active', showSingles);
+    els.navBags.classList.toggle('active', !showSingles);
+
+    if (!showSingles) {
+      const pro = isProEnabled();
+      els.bagUpsell.hidden = pro;
+      els.bagApp.hidden = !pro;
+      if (pro) renderBagDashboard();
+    }
+  }
+
+  function upsertCustomer(platform, username) {
+    const core = window.BagBuilderCore;
+    const normalized = core.normalizeUsername(username);
+    let existing = bagDb.customers.find((c) => core.normalizeUsername(c.username) === normalized && c.platform === platform);
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    existing = {
+      id: core.uid(),
+      platform,
+      username: username.trim(),
+      displayName: '',
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    bagDb.customers.push(existing);
+    return existing;
+  }
+
+  function createBag() {
+    const core = window.BagBuilderCore;
+    const username = (els.bagCustomerUsername.value || '').trim();
+    const platform = (els.bagCustomerPlatform.value || 'whatnot').trim() || 'whatnot';
+    if (!username) {
+      showToast('Enter customer username first');
+      return;
+    }
+
+    const customer = upsertCustomer(platform, username);
+    const now = new Date();
+    const deadline = new Date(now.getTime() + (bagDb.settings.deadlineDays || 60) * 86400000);
+
+    const bag = {
+      id: core.uid(),
+      bagId: core.generateBagId(bagDb.nextBagSeq++),
+      customerId: customer.id,
+      status: core.STATUS.OPEN,
+      createdAt: now.toISOString(),
+      lastActivityAt: now.toISOString(),
+      deadlineAt: deadline.toISOString(),
+      shippingPaid: false,
+      shippingPaidRef: '',
+      trackingNumber: '',
+      binLocation: '',
+    };
+
+    bagDb.bags.push(bag);
+    bagDb.auditLogs.push({
+      id: core.uid(),
+      bagId: bag.id,
+      event: 'CREATE_BAG',
+      payload: { bagId: bag.bagId, customerId: customer.id },
+      createdAt: now.toISOString(),
+      actor: 'local_user',
+    });
+
+    saveBagDb();
+    renderBagDashboard();
+    els.bagCustomerUsername.value = '';
+    showToast(`Created ${bag.bagId}`);
+  }
+
+  function renderBagDashboard() {
+    const core = window.BagBuilderCore;
+    const activeBags = bagDb.bags.filter((b) => [core.STATUS.OPEN, core.STATUS.HOLD, core.STATUS.READY_TO_SHIP, core.STATUS.SHIPPING_PAID, core.STATUS.PACKED].includes(b.status));
+    const overdue = bagDb.bags.filter((b) => core.isOverdue(b));
+    els.bagActiveCount.textContent = String(activeBags.length);
+    els.bagOverdueCount.textContent = String(overdue.length);
+
+    if (!bagDb.bags.length) {
+      els.bagList.innerHTML = '<p class="row">No bags yet. Create your first bag above.</p>';
+      return;
+    }
+
+    const sorted = [...bagDb.bags].sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
+    els.bagList.innerHTML = sorted.map((bag) => {
+      const customer = bagDb.customers.find((c) => c.id === bag.customerId);
+      const totals = core.buildTotals(bagDb.items.filter((i) => i.bagId === bag.id));
+      const overdueBadge = core.isOverdue(bag) ? ' <span class="pro-pill">OVERDUE</span>' : '';
+      return `<div class="row"><span><strong>${bag.bagId}</strong> · ${customer?.username || 'unknown'} (${bag.status})${overdueBadge}</span><strong>${currency(totals.totalValue)}</strong></div>`;
+    }).join('');
+  }
+
+  function exportBagsCsv() {
+    const core = window.BagBuilderCore;
+    const csv = core.exportBagsSummaryCsv(bagDb);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bags-summary-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Bags CSV exported');
+  }
+
+  function initBagBuilder() {
+    bagDb = loadBagDb();
+    els.navSingles.addEventListener('click', () => setActiveModule('singles'));
+    els.navBags.addEventListener('click', () => setActiveModule('bags'));
+    els.createBagBtn.addEventListener('click', createBag);
+    els.exportBagsCsvBtn.addEventListener('click', exportBagsCsv);
+  }
+
   restoreInputs();
   calculate();
+  initBagBuilder();
+  setActiveModule(activeModule);
   els.cardCost.focus();
 })();

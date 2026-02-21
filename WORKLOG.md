@@ -33,3 +33,8 @@
 - Completed architecture/spec fit check for Bag Builder request.
 - Confirmed existing core modules already include Bag Builder entities, status enums, CSV export, overdue logic, audit-ready helpers.
 - Next: wire full UI routes/tabs in index.html + app.js with Pro gate and local-first persistence.
+
+### 2026-02-20 23:06:11
+- Shipped Bag Builder module shell with Pro-gated routing and local-first bag dashboard.
+- Added nav switching (Singles <-> Bag Builder), Pro upsell state, create bag action, dashboard KPIs, and CSV export action.
+- Validation: node --check app.js, node --test tests\\*.test.js (all pass).
