@@ -21,8 +21,9 @@ Then open `http://localhost:4173`.
 ### Features shipped
 
 - configurable shipping-per-card math
-- configurable platform fee percentage
+- configurable Whatnot-style fee model: commission % + processing % + fixed processing $
+- break-even computed with cent-level fee rounding
 - recommended start rounded to nearest `$0.25`
-- detailed expandable cost breakdown
+- detailed expandable cost breakdown (commission, processing, total fees, net earnings, profit)
 - copy-to-clipboard listing snippet
 - localStorage persistence for last-used values
