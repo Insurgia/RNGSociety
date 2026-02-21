@@ -38,3 +38,8 @@
 - Shipped Bag Builder module shell with Pro-gated routing and local-first bag dashboard.
 - Added nav switching (Singles <-> Bag Builder), Pro upsell state, create bag action, dashboard KPIs, and CSV export action.
 - Validation: node --check app.js, node --test tests\\*.test.js (all pass).
+
+### 2026-02-20 23:08:29
+- Shipped Bag Detail + Quick Add Item flow.
+- Added selectable bag rows, ledger rendering, audit trail rendering, and shipping-paid action with audit logs.
+- Validation: node --check app.js, node --test tests\\*.test.js (all pass).

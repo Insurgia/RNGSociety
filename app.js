@@ -35,6 +35,17 @@
     bagList: document.getElementById('bagList'),
     bagActiveCount: document.getElementById('bagActiveCount'),
     bagOverdueCount: document.getElementById('bagOverdueCount'),
+    bagDetail: document.getElementById('bagDetail'),
+    bagDetailHeader: document.getElementById('bagDetailHeader'),
+    bagItemName: document.getElementById('bagItemName'),
+    bagItemType: document.getElementById('bagItemType'),
+    bagItemQty: document.getElementById('bagItemQty'),
+    bagItemSalePrice: document.getElementById('bagItemSalePrice'),
+    bagItemWeight: document.getElementById('bagItemWeight'),
+    addBagItemBtn: document.getElementById('addBagItemBtn'),
+    markShippingPaidBtn: document.getElementById('markShippingPaidBtn'),
+    bagLedger: document.getElementById('bagLedger'),
+    bagAudit: document.getElementById('bagAudit'),
   };
 
   let currentBuffer = 0.15;
@@ -47,6 +58,7 @@
 
   let activeModule = 'singles';
   let bagDb = null;
+  let selectedBagId = null;
 
   const toNumber = (value) => {
     const n = Number.parseFloat(value);
@@ -374,6 +386,28 @@
     showToast(`Created ${bag.bagId}`);
   }
 
+  function renderBagDetail() {
+    const core = window.BagBuilderCore;
+    const bag = bagDb.bags.find((b) => b.id === selectedBagId);
+    if (!bag) {
+      els.bagDetail.hidden = true;
+      return;
+    }
+    els.bagDetail.hidden = false;
+    const customer = bagDb.customers.find((c) => c.id === bag.customerId);
+    const items = bagDb.items.filter((i) => i.bagId === bag.id);
+    const logs = bagDb.auditLogs.filter((l) => l.bagId === bag.id).slice(-8).reverse();
+    const totals = core.buildTotals(items);
+
+    els.bagDetailHeader.innerHTML = `<span><strong>${bag.bagId}</strong> · ${customer?.username || 'unknown'} (${bag.status})</span><strong>${currency(totals.totalValue)}</strong>`;
+    els.bagLedger.innerHTML = items.length
+      ? items.map((i) => `<div class="row"><span>${i.name} x${i.qty} · ${i.type}</span><strong>${currency((Number(i.salePrice)||0) * (Number(i.qty)||1))}</strong></div>`).join('')
+      : '<p class="row">No items yet.</p>';
+    els.bagAudit.innerHTML = logs.length
+      ? logs.map((l) => `<div class="row"><span>${l.event}</span><strong>${new Date(l.createdAt).toLocaleString()}</strong></div>`).join('')
+      : '<p class="row">No audit events yet.</p>';
+  }
+
   function renderBagDashboard() {
     const core = window.BagBuilderCore;
     const activeBags = bagDb.bags.filter((b) => [core.STATUS.OPEN, core.STATUS.HOLD, core.STATUS.READY_TO_SHIP, core.STATUS.SHIPPING_PAID, core.STATUS.PACKED].includes(b.status));
@@ -383,6 +417,7 @@
 
     if (!bagDb.bags.length) {
       els.bagList.innerHTML = '<p class="row">No bags yet. Create your first bag above.</p>';
+      els.bagDetail.hidden = true;
       return;
     }
 
@@ -391,8 +426,70 @@
       const customer = bagDb.customers.find((c) => c.id === bag.customerId);
       const totals = core.buildTotals(bagDb.items.filter((i) => i.bagId === bag.id));
       const overdueBadge = core.isOverdue(bag) ? ' <span class="pro-pill">OVERDUE</span>' : '';
-      return `<div class="row"><span><strong>${bag.bagId}</strong> · ${customer?.username || 'unknown'} (${bag.status})${overdueBadge}</span><strong>${currency(totals.totalValue)}</strong></div>`;
+      const activeClass = selectedBagId === bag.id ? ' style="color: var(--cyan);"' : '';
+      return `<div class="row" data-bag-id="${bag.id}"${activeClass}><span><strong>${bag.bagId}</strong> · ${customer?.username || 'unknown'} (${bag.status})${overdueBadge}</span><strong>${currency(totals.totalValue)}</strong></div>`;
     }).join('');
+
+    els.bagList.querySelectorAll('[data-bag-id]').forEach((node) => {
+      node.style.cursor = 'pointer';
+      node.addEventListener('click', () => {
+        selectedBagId = node.getAttribute('data-bag-id');
+        renderBagDashboard();
+        renderBagDetail();
+      });
+    });
+
+    if (!selectedBagId) selectedBagId = sorted[0].id;
+    renderBagDetail();
+  }
+
+  function addBagItem() {
+    const core = window.BagBuilderCore;
+    const bag = bagDb.bags.find((b) => b.id === selectedBagId);
+    if (!bag) return;
+    const name = (els.bagItemName.value || '').trim();
+    if (!name) return showToast('Item name required');
+    const now = new Date().toISOString();
+    const item = {
+      id: core.uid(),
+      bagId: bag.id,
+      type: (els.bagItemType.value || 'SINGLE').toUpperCase(),
+      name,
+      set: '',
+      condition: '',
+      qty: Math.max(1, Math.floor(toNumber(els.bagItemQty.value) || 1)),
+      salePrice: Math.max(0, toNumber(els.bagItemSalePrice.value) || 0),
+      marketPrice: null,
+      costBasis: null,
+      weightGrams: Math.max(0, toNumber(els.bagItemWeight.value) || 0),
+      streamId: '',
+      status: core.ITEM_STATUS.IN_BAG,
+      addedAt: now,
+      updatedAt: now,
+      notes: '',
+    };
+    bagDb.items.push(item);
+    bag.lastActivityAt = now;
+    bagDb.auditLogs.push({ id: core.uid(), bagId: bag.id, event: 'ADD_ITEM', payload: { itemId: item.id, name: item.name, qty: item.qty }, createdAt: now, actor: 'local_user' });
+    saveBagDb();
+    els.bagItemName.value = '';
+    els.bagItemSalePrice.value = '0.00';
+    renderBagDashboard();
+    showToast('Item added');
+  }
+
+  function markShippingPaid() {
+    const core = window.BagBuilderCore;
+    const bag = bagDb.bags.find((b) => b.id === selectedBagId);
+    if (!bag) return;
+    const now = new Date().toISOString();
+    bag.shippingPaid = true;
+    bag.status = core.STATUS.SHIPPING_PAID;
+    bag.lastActivityAt = now;
+    bagDb.auditLogs.push({ id: core.uid(), bagId: bag.id, event: 'MARK_SHIPPING_PAID', payload: { status: bag.status }, createdAt: now, actor: 'local_user' });
+    saveBagDb();
+    renderBagDashboard();
+    showToast('Shipping marked paid');
   }
 
   function exportBagsCsv() {
@@ -414,6 +511,8 @@
     els.navBags.addEventListener('click', () => setActiveModule('bags'));
     els.createBagBtn.addEventListener('click', createBag);
     els.exportBagsCsvBtn.addEventListener('click', exportBagsCsv);
+    els.addBagItemBtn.addEventListener('click', addBagItem);
+    els.markShippingPaidBtn.addEventListener('click', markShippingPaid);
   }
 
   restoreInputs();
