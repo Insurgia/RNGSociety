@@ -666,68 +666,78 @@
     showToast('Bag label generated');
   }
 
-  function printBagLabel() {
+  async function ensureJsPdf() {
+    if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    return window.jspdf.jsPDF;
+  }
+
+  async function urlToDataUrl(url) {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function printBagLabel() {
     const bag = bagDb.bags.find((b) => b.id === selectedBagId);
     if (!bag) return;
     const customer = bagDb.customers.find((c) => c.id === bag.customerId) || { username: 'unknown', platform: '' };
     const deepLink = `${window.location.origin + window.location.pathname}?module=bags&bag=${encodeURIComponent(bag.id)}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(deepLink)}`;
 
-    const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Bag Label ${bag.bagId}</title>
-    <style>
-      @page { size: 4in 6in; margin: 0.2in; }
-      body { font-family: Arial, sans-serif; margin: 0; color: #111; }
-      .label { border: 2px solid #111; border-radius: 10px; padding: 14px; width: 100%; box-sizing: border-box; }
-      .brand { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #555; margin-bottom: 8px; }
-      .bag { font-size: 28px; font-weight: 800; margin: 2px 0 10px; }
-      .row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 13px; }
-      .key { color: #666; }
-      .qr-wrap { margin-top: 12px; display: flex; justify-content: center; }
-      .qr { width: 190px; height: 190px; border: 1px solid #999; }
-      .small { margin-top: 8px; font-size: 10px; color: #666; word-break: break-all; }
-    </style>
-  </head>
-  <body>
-    <section class="label">
-      <div class="brand">RNG Society · Bag Label</div>
-      <div class="bag">${bag.bagId}</div>
-      <div class="row"><span class="key">Customer</span><strong>${customer.username}</strong></div>
-      <div class="row"><span class="key">Platform</span><strong>${customer.platform || 'n/a'}</strong></div>
-      <div class="row"><span class="key">Status</span><strong>${bag.status}</strong></div>
-      <div class="row"><span class="key">Bin</span><strong>${bag.binLocation || 'n/a'}</strong></div>
-      <div class="qr-wrap"><img class="qr" src="${qrUrl}" alt="Bag QR" /></div>
-      <div class="small">${deepLink}</div>
-    </section>
-  </body>
-</html>`;
+    try {
+      const jsPDF = await ensureJsPdf();
+      const pdf = new jsPDF({ unit: 'pt', format: [288, 432] }); // 4x6in
 
-    const frame = document.createElement('iframe');
-    frame.style.position = 'fixed';
-    frame.style.right = '0';
-    frame.style.bottom = '0';
-    frame.style.width = '0';
-    frame.style.height = '0';
-    frame.style.border = '0';
-    document.body.appendChild(frame);
+      pdf.setLineWidth(1.5);
+      pdf.roundedRect(16, 16, 256, 398, 8, 8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(90, 90, 90);
+      pdf.text('RNG Society · Bag Label', 26, 34);
 
-    const doc = frame.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(24);
+      pdf.setTextColor(20, 20, 20);
+      pdf.text(bag.bagId, 26, 62);
 
-    const img = doc.querySelector('.qr');
-    const triggerPrint = () => {
-      frame.contentWindow.focus();
-      frame.contentWindow.print();
-      setTimeout(() => frame.remove(), 1000);
-    };
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.setTextColor(80, 80, 80);
+      pdf.text('Customer', 26, 86); pdf.setTextColor(20, 20, 20); pdf.text(String(customer.username || 'unknown'), 110, 86);
+      pdf.setTextColor(80, 80, 80); pdf.text('Platform', 26, 102); pdf.setTextColor(20, 20, 20); pdf.text(String(customer.platform || 'n/a'), 110, 102);
+      pdf.setTextColor(80, 80, 80); pdf.text('Status', 26, 118); pdf.setTextColor(20, 20, 20); pdf.text(String(bag.status), 110, 118);
+      pdf.setTextColor(80, 80, 80); pdf.text('Bin', 26, 134); pdf.setTextColor(20, 20, 20); pdf.text(String(bag.binLocation || 'n/a'), 110, 134);
 
-    if (img && !img.complete) img.addEventListener('load', triggerPrint);
-    else triggerPrint();
+      try {
+        const qrDataUrl = await urlToDataUrl(qrUrl);
+        pdf.addImage(qrDataUrl, 'PNG', 72, 152, 144, 144);
+      } catch {
+        pdf.setTextColor(160, 40, 40);
+        pdf.text('QR unavailable', 110, 230);
+      }
+
+      pdf.setFontSize(7);
+      pdf.setTextColor(110, 110, 110);
+      const wrapped = pdf.splitTextToSize(deepLink, 230);
+      pdf.text(wrapped, 26, 320);
+
+      pdf.save(`bag-label-${bag.bagId}.pdf`);
+      showToast('Label PDF downloaded');
+    } catch {
+      showToast('Failed to generate PDF label');
+    }
   }
 
   function updateBagStatus() {
