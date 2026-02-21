@@ -89,6 +89,21 @@
   let purchaseSettings = null;
   let purchaseRows = [];
 
+  function applyRouteFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const moduleParam = params.get('module');
+    const bagParam = params.get('bag');
+
+    if (moduleParam === 'bags' || moduleParam === 'purchase' || moduleParam === 'singles') {
+      activeModule = moduleParam;
+    }
+
+    if (bagParam) {
+      selectedBagId = bagParam;
+      activeModule = 'bags';
+    }
+  }
+
   const toNumber = (value) => {
     const n = Number.parseFloat(value);
     return Number.isFinite(n) ? n : NaN;
@@ -580,7 +595,7 @@
       });
     });
 
-    if (!selectedBagId) selectedBagId = sorted[0].id;
+    if (!selectedBagId || !bagDb.bags.some((b) => b.id === selectedBagId)) selectedBagId = sorted[0].id;
     renderBagDetail();
   }
 
@@ -820,7 +835,8 @@
 
   restoreInputs();
   calculate();
+  applyRouteFromUrl();
   initBagBuilder();
   setActiveModule(activeModule);
-  els.cardCost.focus();
+  if (activeModule === 'singles') els.cardCost.focus();
 })();
