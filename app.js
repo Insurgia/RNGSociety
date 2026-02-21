@@ -673,12 +673,6 @@
     const deepLink = `${window.location.origin + window.location.pathname}?module=bags&bag=${encodeURIComponent(bag.id)}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(deepLink)}`;
 
-    const printWin = window.open('', '_blank', 'width=520,height=760');
-    if (!printWin) {
-      showToast('Popup blocked. Allow popups to print label.');
-      return;
-    }
-
     const html = `<!doctype html>
 <html>
   <head>
@@ -708,17 +702,32 @@
       <div class="qr-wrap"><img class="qr" src="${qrUrl}" alt="Bag QR" /></div>
       <div class="small">${deepLink}</div>
     </section>
-    <script>
-      const img = document.querySelector('.qr');
-      const printNow = () => { window.focus(); window.print(); setTimeout(() => window.close(), 200); };
-      if (img && !img.complete) img.addEventListener('load', printNow); else printNow();
-    <\/script>
   </body>
 </html>`;
 
-    printWin.document.open();
-    printWin.document.write(html);
-    printWin.document.close();
+    const frame = document.createElement('iframe');
+    frame.style.position = 'fixed';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    frame.style.border = '0';
+    document.body.appendChild(frame);
+
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const img = doc.querySelector('.qr');
+    const triggerPrint = () => {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      setTimeout(() => frame.remove(), 1000);
+    };
+
+    if (img && !img.complete) img.addEventListener('load', triggerPrint);
+    else triggerPrint();
   }
 
   function updateBagStatus() {
