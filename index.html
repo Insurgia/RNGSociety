@@ -142,9 +142,47 @@
           </section>
           <div id="bagList" class="breakdown-inner" style="margin-top:12px;"></div>
 
+          <section class="card" style="margin-top:12px;">
+            <h2>Customers</h2>
+            <div id="customerList" class="breakdown-inner"></div>
+          </section>
+
+          <section class="card" style="margin-top:12px;">
+            <h2>Bag Builder Settings</h2>
+            <div class="grid two-col">
+              <label class="field">
+                <span>Default Deadline Days</span>
+                <div class="input-wrap"><input id="settingDeadlineDays" type="number" min="1" step="1" value="60" /></div>
+              </label>
+              <label class="field">
+                <span>High Value Threshold ($)</span>
+                <div class="input-wrap"><span>$</span><input id="settingHighValue" type="number" min="0" step="1" value="150" /></div>
+              </label>
+            </div>
+            <section class="actions" style="margin-top:12px;">
+              <button id="saveBagSettingsBtn" class="btn secondary">Save Settings</button>
+            </section>
+          </section>
+
           <section id="bagDetail" class="card" style="margin-top:12px;" hidden>
             <h2>Bag Detail</h2>
             <div id="bagDetailHeader" class="row" style="margin-bottom:10px;"></div>
+            <div class="grid two-col" style="margin-bottom:10px;">
+              <label class="field">
+                <span>Status</span>
+                <div class="input-wrap">
+                  <select id="bagStatusSelect" class="select-input">
+                    <option value="OPEN">OPEN</option>
+                    <option value="READY_TO_SHIP">READY_TO_SHIP</option>
+                    <option value="SHIPPING_PAID">SHIPPING_PAID</option>
+                    <option value="PACKED">PACKED</option>
+                    <option value="SHIPPED">SHIPPED</option>
+                    <option value="ARCHIVED">ARCHIVED</option>
+                    <option value="HOLD">HOLD</option>
+                  </select>
+                </div>
+              </label>
+            </div>
             <div class="grid two-col">
               <label class="field">
                 <span>Item Name</span>

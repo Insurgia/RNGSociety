@@ -46,6 +46,11 @@
     markShippingPaidBtn: document.getElementById('markShippingPaidBtn'),
     bagLedger: document.getElementById('bagLedger'),
     bagAudit: document.getElementById('bagAudit'),
+    bagStatusSelect: document.getElementById('bagStatusSelect'),
+    customerList: document.getElementById('customerList'),
+    settingDeadlineDays: document.getElementById('settingDeadlineDays'),
+    settingHighValue: document.getElementById('settingHighValue'),
+    saveBagSettingsBtn: document.getElementById('saveBagSettingsBtn'),
   };
 
   let currentBuffer = 0.15;
@@ -399,7 +404,10 @@
     const logs = bagDb.auditLogs.filter((l) => l.bagId === bag.id).slice(-8).reverse();
     const totals = core.buildTotals(items);
 
-    els.bagDetailHeader.innerHTML = `<span><strong>${bag.bagId}</strong> · ${customer?.username || 'unknown'} (${bag.status})</span><strong>${currency(totals.totalValue)}</strong>`;
+    const hvThreshold = Number(bagDb.settings.highValueThreshold || 150);
+    const hvBadge = totals.totalValue >= hvThreshold ? ' <span class="pro-pill">HIGH VALUE</span>' : '';
+    els.bagDetailHeader.innerHTML = `<span><strong>${bag.bagId}</strong> · ${customer?.username || 'unknown'} (${bag.status})${hvBadge}</span><strong>${currency(totals.totalValue)}</strong>`;
+    els.bagStatusSelect.value = bag.status;
     els.bagLedger.innerHTML = items.length
       ? items.map((i) => `<div class="row"><span>${i.name} x${i.qty} · ${i.type}</span><strong>${currency((Number(i.salePrice)||0) * (Number(i.qty)||1))}</strong></div>`).join('')
       : '<p class="row">No items yet.</p>';
@@ -414,6 +422,18 @@
     const overdue = bagDb.bags.filter((b) => core.isOverdue(b));
     els.bagActiveCount.textContent = String(activeBags.length);
     els.bagOverdueCount.textContent = String(overdue.length);
+
+    const customerRows = bagDb.customers.map((c) => {
+      const bags = bagDb.bags.filter((b) => b.customerId === c.id && b.status !== core.STATUS.ARCHIVED);
+      const openValue = bags.reduce((sum, bag) => {
+        const totals = core.buildTotals(bagDb.items.filter((i) => i.bagId === bag.id));
+        return sum + totals.totalValue;
+      }, 0);
+      return `<div class="row"><span>${c.username} (${c.platform})</span><strong>${bags.length} bags · ${currency(openValue)}</strong></div>`;
+    });
+    els.customerList.innerHTML = customerRows.length ? customerRows.join('') : '<p class="row">No customers yet.</p>';
+    els.settingDeadlineDays.value = String(bagDb.settings.deadlineDays || 60);
+    els.settingHighValue.value = String(bagDb.settings.highValueThreshold || 150);
 
     if (!bagDb.bags.length) {
       els.bagList.innerHTML = '<p class="row">No bags yet. Create your first bag above.</p>';
@@ -492,6 +512,38 @@
     showToast('Shipping marked paid');
   }
 
+  function updateBagStatus() {
+    const core = window.BagBuilderCore;
+    const bag = bagDb.bags.find((b) => b.id === selectedBagId);
+    if (!bag) return;
+    const next = els.bagStatusSelect.value;
+    if (bag.status === next) return;
+    const allowed = core.validTransition(bag.status, next);
+    const now = new Date().toISOString();
+    const prev = bag.status;
+    bag.status = next;
+    bag.lastActivityAt = now;
+    bagDb.auditLogs.push({
+      id: core.uid(),
+      bagId: bag.id,
+      event: 'CHANGE_STATUS',
+      payload: { from: prev, to: next, override: !allowed },
+      createdAt: now,
+      actor: 'local_user',
+    });
+    saveBagDb();
+    renderBagDashboard();
+    showToast(allowed ? 'Status updated' : 'Status override logged');
+  }
+
+  function saveBagSettings() {
+    bagDb.settings.deadlineDays = Math.max(1, Math.floor(toNumber(els.settingDeadlineDays.value) || 60));
+    bagDb.settings.highValueThreshold = Math.max(0, toNumber(els.settingHighValue.value) || 150);
+    saveBagDb();
+    renderBagDashboard();
+    showToast('Settings saved');
+  }
+
   function exportBagsCsv() {
     const core = window.BagBuilderCore;
     const csv = core.exportBagsSummaryCsv(bagDb);
@@ -513,6 +565,8 @@
     els.exportBagsCsvBtn.addEventListener('click', exportBagsCsv);
     els.addBagItemBtn.addEventListener('click', addBagItem);
     els.markShippingPaidBtn.addEventListener('click', markShippingPaid);
+    els.bagStatusSelect.addEventListener('change', updateBagStatus);
+    els.saveBagSettingsBtn.addEventListener('click', saveBagSettings);
   }
 
   restoreInputs();

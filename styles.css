@@ -40,6 +40,7 @@ h2 { margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter
 .input-wrap:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px #32ebe324; }
 .input-wrap span { margin: 0; color: var(--muted); font-family: Orbitron, sans-serif; }
 input { width: 100%; border: none; outline: none; background: transparent; color: var(--text); padding: 11px 6px; font: 700 1.15rem Orbitron, sans-serif; }
+.select-input { width: 100%; border: none; outline: none; background: transparent; color: var(--text); padding: 11px 6px; font: 700 .92rem Orbitron, sans-serif; }
 .shipping { align-items: end; margin-top: 10px; }
 .fee-grid { margin-top: 10px; }
 .pill { align-self: center; justify-self: stretch; text-align: center; border: 1px solid #32ebe34f; background: #32ebe314; color: var(--cyan); border-radius: 999px; font-family: Orbitron,sans-serif; padding: 10px 12px; font-size: .9rem; }

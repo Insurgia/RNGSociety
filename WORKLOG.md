@@ -43,3 +43,8 @@
 - Shipped Bag Detail + Quick Add Item flow.
 - Added selectable bag rows, ledger rendering, audit trail rendering, and shipping-paid action with audit logs.
 - Validation: node --check app.js, node --test tests\\*.test.js (all pass).
+
+### 2026-02-20 23:13:29
+- Added status transitions + settings + customer summary surfaces for Bag Builder.
+- Implemented status change auditing (including override flag), high-value badge, and editable deadline/high-value settings.
+- Validation: node --check app.js, node --test tests\\*.test.js (all pass).
