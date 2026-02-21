@@ -19,8 +19,9 @@
         </div>
       </header>
 
-      <nav class="top-nav" aria-label="Module navigation">
+      <nav class="top-nav top-nav-3" aria-label="Module navigation">
         <button id="navSingles" class="nav-btn active" data-module="singles">Singles Calculator</button>
+        <button id="navPurchase" class="nav-btn" data-module="purchase">Purchase Calculator</button>
         <button id="navBags" class="nav-btn" data-module="bags">Bag Builder <span class="pro-pill">PRO</span></button>
       </nav>
 
@@ -81,18 +82,22 @@
           <p>Break-Even Start</p>
           <h3 id="breakEvenVal">—</h3>
           <small>Minimum safe start price</small>
+          <small class="raw-note" id="breakEvenRaw"></small>
         </article>
         <article class="metric info">
           <p>Recommended Start</p>
           <h3 id="recommendVal">—</h3>
           <small id="recommendHint">Enter card cost to calculate</small>
+          <small class="raw-note" id="recommendRaw"></small>
         </article>
         <article class="metric success" id="profitCard">
           <p>Estimated Profit</p>
           <h3 id="profitVal">—</h3>
           <small>At recommended start</small>
+          <small class="raw-note" id="profitRaw"></small>
         </article>
       </section>
+      <p class="rounding-note">Displayed values are rounded to the nearest dollar.</p>
 
       <section class="card breakdown-card">
         <button class="breakdown-toggle" id="breakdownToggle" aria-expanded="false">Detailed Breakdown <span>▼</span></button>
@@ -105,6 +110,46 @@
         <button id="copyBtn" class="btn primary" disabled>Copy Listing Snippet</button>
         <button id="resetBtn" class="btn secondary">Reset</button>
       </section>
+      </section>
+
+      <section id="purchaseModule" class="module" hidden>
+        <section class="card">
+          <h2>Purchase Calculator</h2>
+          <div class="grid three-col">
+            <label class="field">
+              <span>Platform Fee (%)</span>
+              <div class="input-wrap"><input id="pcPlatformFee" type="number" min="0" max="100" step="0.1" value="12" /></div>
+            </label>
+            <label class="field">
+              <span>Processing (%)</span>
+              <div class="input-wrap"><input id="pcProcessingFee" type="number" min="0" max="100" step="0.1" value="3" /></div>
+            </label>
+            <label class="field">
+              <span>Underperform (%)</span>
+              <div class="input-wrap"><input id="pcUnderperform" type="number" min="0" max="100" step="0.1" value="15" /></div>
+            </label>
+          </div>
+          <div class="grid two-col" style="margin-top:10px;">
+            <label class="field">
+              <span>Target Profit (%)</span>
+              <div class="input-wrap"><input id="pcTargetProfit" type="number" min="0" max="100" step="0.1" value="25" /></div>
+            </label>
+            <label class="field">
+              <span>Offer Price ($)</span>
+              <div class="input-wrap"><span>$</span><input id="pcOfferPrice" type="number" min="0" step="0.01" value="0" /></div>
+            </label>
+          </div>
+          <label class="field" style="margin-top:10px;">
+            <span>Bulk Paste (Name - qty - $value)</span>
+            <div class="input-wrap"><input id="pcBulkPaste" type="text" placeholder="Pikachu - 2 - $12\nCharizard - 1 - $65" /></div>
+          </label>
+          <section class="actions" style="margin-top:12px;">
+            <button id="pcParseBtn" class="btn primary">Parse / Analyze</button>
+            <button id="pcExportBtn" class="btn secondary">Export CSV</button>
+          </section>
+          <div id="pcResults" class="breakdown-inner" style="margin-top:12px;"></div>
+          <div id="pcTiers" class="breakdown-inner" style="margin-top:12px;"></div>
+        </section>
       </section>
 
       <section id="bagsModule" class="module" hidden>

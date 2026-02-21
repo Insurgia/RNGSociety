@@ -11,9 +11,12 @@
     processingFixed: document.getElementById('processingFixed'),
     perCardShip: document.getElementById('perCardShip'),
     breakEvenVal: document.getElementById('breakEvenVal'),
+    breakEvenRaw: document.getElementById('breakEvenRaw'),
     recommendVal: document.getElementById('recommendVal'),
+    recommendRaw: document.getElementById('recommendRaw'),
     recommendHint: document.getElementById('recommendHint'),
     profitVal: document.getElementById('profitVal'),
+    profitRaw: document.getElementById('profitRaw'),
     profitCard: document.getElementById('profitCard'),
     breakdownInner: document.getElementById('breakdownInner'),
     breakdownToggle: document.getElementById('breakdownToggle'),
@@ -23,8 +26,10 @@
     toast: document.getElementById('toast'),
     bufferBtns: [...document.querySelectorAll('.buffer-btn')],
     navSingles: document.getElementById('navSingles'),
+    navPurchase: document.getElementById('navPurchase'),
     navBags: document.getElementById('navBags'),
     singlesModule: document.getElementById('singlesModule'),
+    purchaseModule: document.getElementById('purchaseModule'),
     bagsModule: document.getElementById('bagsModule'),
     bagUpsell: document.getElementById('bagUpsell'),
     bagApp: document.getElementById('bagApp'),
@@ -51,6 +56,16 @@
     settingDeadlineDays: document.getElementById('settingDeadlineDays'),
     settingHighValue: document.getElementById('settingHighValue'),
     saveBagSettingsBtn: document.getElementById('saveBagSettingsBtn'),
+    pcPlatformFee: document.getElementById('pcPlatformFee'),
+    pcProcessingFee: document.getElementById('pcProcessingFee'),
+    pcUnderperform: document.getElementById('pcUnderperform'),
+    pcTargetProfit: document.getElementById('pcTargetProfit'),
+    pcOfferPrice: document.getElementById('pcOfferPrice'),
+    pcBulkPaste: document.getElementById('pcBulkPaste'),
+    pcParseBtn: document.getElementById('pcParseBtn'),
+    pcExportBtn: document.getElementById('pcExportBtn'),
+    pcResults: document.getElementById('pcResults'),
+    pcTiers: document.getElementById('pcTiers'),
   };
 
   let currentBuffer = 0.15;
@@ -60,10 +75,14 @@
   const STORAGE_KEY = 'rngsociety-profit-calc-v3';
   const BAG_DB_KEY = 'rngsociety-bag-builder-v1';
   const PRO_KEY = 'rngsociety-pro-enabled';
+  const PURCHASE_SETTINGS_KEY = 'rngsociety-purchase-settings-v1';
+  const PURCHASE_ROWS_KEY = 'rngsociety-purchase-rows-v1';
 
   let activeModule = 'singles';
   let bagDb = null;
   let selectedBagId = null;
+  let purchaseSettings = null;
+  let purchaseRows = [];
 
   const toNumber = (value) => {
     const n = Number.parseFloat(value);
@@ -72,10 +91,10 @@
 
   const round2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
   const currency = (value) => `$${round2(value).toFixed(2)}`;
-  const roundUpDollar = (value) => Math.ceil(Number(value) || 0);
-  const singleCurrency = (value) => `$${roundUpDollar(value)}`;
+  const roundNearestDollar = (value) => Math.round(Number(value) || 0);
+  const singleCurrency = (value) => `$${roundNearestDollar(value)}`;
   const signedSingleCurrency = (value) => {
-    const rounded = roundUpDollar(value);
+    const rounded = roundNearestDollar(value);
     return `${rounded >= 0 ? '+' : '-'}$${Math.abs(rounded)}`;
   };
   const ceilQuarter = (value) => Math.ceil(value * 4) / 4;
@@ -149,9 +168,12 @@
 
   function setEmptyState() {
     currentRecommended = null;
-    els.breakEvenVal.textContent = '—';
-    els.recommendVal.textContent = '—';
-    els.profitVal.textContent = '—';
+    els.breakEvenVal.textContent = '-';
+    els.breakEvenRaw.textContent = '';
+    els.recommendVal.textContent = '-';
+    els.recommendRaw.textContent = '';
+    els.profitVal.textContent = '-';
+    els.profitRaw.textContent = '';
     els.recommendHint.textContent = 'Enter card cost to calculate';
     els.copyBtn.disabled = true;
     els.profitCard.classList.remove('negative');
@@ -184,8 +206,11 @@
 
     currentRecommended = recommended;
     els.breakEvenVal.textContent = singleCurrency(breakEven);
+    els.breakEvenRaw.textContent = `Exact: ${currency(breakEven)}`;
     els.recommendVal.textContent = singleCurrency(recommended);
+    els.recommendRaw.textContent = `Exact: ${currency(recommended)}`;
     els.profitVal.textContent = signedSingleCurrency(calc.profit);
+    els.profitRaw.textContent = `Exact: ${calc.profit >= 0 ? '+' : '-'}${currency(Math.abs(calc.profit))}`;
     els.recommendHint.textContent = `${Math.round(currentBuffer * 100)}% buffer + rounded to nearest $0.25`;
     els.profitCard.classList.toggle('negative', calc.profit < 0);
     els.copyBtn.disabled = false;
@@ -327,15 +352,91 @@
     }
   }
 
+  function loadPurchaseState() {
+    const core = window.PurchaseCalculatorCore;
+    const storedSettings = localStorage.getItem(PURCHASE_SETTINGS_KEY);
+    const storedRows = localStorage.getItem(PURCHASE_ROWS_KEY);
+    purchaseSettings = core.normalizeSettings(storedSettings ? JSON.parse(storedSettings) : core.defaultPurchaseSettings);
+    purchaseRows = storedRows ? JSON.parse(storedRows) : [];
+    els.pcPlatformFee.value = String(purchaseSettings.platformFeePercent);
+    els.pcProcessingFee.value = String(purchaseSettings.paymentProcessingPercent);
+    els.pcUnderperform.value = String(purchaseSettings.underperformRatePercent);
+    els.pcTargetProfit.value = String(purchaseSettings.targetProfitPercent);
+  }
+
+  function savePurchaseState() {
+    localStorage.setItem(PURCHASE_SETTINGS_KEY, JSON.stringify(purchaseSettings));
+    localStorage.setItem(PURCHASE_ROWS_KEY, JSON.stringify(purchaseRows));
+  }
+
+  function renderPurchase() {
+    const core = window.PurchaseCalculatorCore;
+    const settings = {
+      ...purchaseSettings,
+      platformFeePercent: toNumber(els.pcPlatformFee.value) || 12,
+      paymentProcessingPercent: toNumber(els.pcProcessingFee.value) || 3,
+      underperformRatePercent: toNumber(els.pcUnderperform.value) || 15,
+      targetProfitPercent: toNumber(els.pcTargetProfit.value) || 25,
+    };
+    purchaseSettings = core.normalizeSettings(settings);
+    const result = core.aggregateResults(purchaseRows, purchaseSettings);
+    const offer = Math.max(0, toNumber(els.pcOfferPrice.value) || 0);
+    const pnl = round2(result.riskAdjustedNet - offer);
+
+    els.pcResults.innerHTML = [
+      ['Total Market', currency(result.totals.totalMarket)],
+      ['Est. Stream Gross', currency(result.totals.estimatedStreamGross)],
+      ['Est. Net After Fees', currency(result.totals.estimatedNetAfterFees)],
+      ['Risk-Adjusted Net', currency(result.totals.riskAdjustedNet)],
+      ['Max Offer (target margin)', currency(result.recommendedMaxOffer)],
+      ['Break-even Offer', currency(result.breakEvenOffer)],
+      ['P/L at Offer', `${pnl >= 0 ? '+' : '-'}${currency(Math.abs(pnl))}`],
+    ].map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`).join('');
+
+    const tierOrder = ['$1', '$2', '$3', '$5', '$10', '$15+', 'Fixed Price'];
+    els.pcTiers.innerHTML = tierOrder.map((tier) => {
+      const rows = result.grouped[tier] || [];
+      return `<div class="row"><span>${tier}</span><strong>${rows.length} cards</strong></div>`;
+    }).join('');
+
+    savePurchaseState();
+  }
+
+  function parsePurchaseRows() {
+    const core = window.PurchaseCalculatorCore;
+    purchaseRows = core.parseBulkPaste(els.pcBulkPaste.value || '');
+    renderPurchase();
+    showToast(`Parsed ${purchaseRows.length} rows`);
+  }
+
+  function exportPurchaseCsv() {
+    const core = window.PurchaseCalculatorCore;
+    const result = core.aggregateResults(purchaseRows, purchaseSettings);
+    const csv = core.exportRowsCsv(result.analyzedRows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `purchase-analysis-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Purchase CSV exported');
+  }
+
   function setActiveModule(module) {
     activeModule = module;
     const showSingles = module === 'singles';
+    const showPurchase = module === 'purchase';
+    const showBags = module === 'bags';
     els.singlesModule.hidden = !showSingles;
-    els.bagsModule.hidden = showSingles;
+    els.purchaseModule.hidden = !showPurchase;
+    els.bagsModule.hidden = !showBags;
     els.navSingles.classList.toggle('active', showSingles);
-    els.navBags.classList.toggle('active', !showSingles);
+    els.navPurchase.classList.toggle('active', showPurchase);
+    els.navBags.classList.toggle('active', showBags);
 
-    if (!showSingles) {
+    if (showPurchase) renderPurchase();
+    if (showBags) {
       const pro = isProEnabled();
       els.bagUpsell.hidden = pro;
       els.bagApp.hidden = !pro;
@@ -574,8 +675,15 @@
   function initBagBuilder() {
     seedProAccessIfMissing();
     bagDb = loadBagDb();
+    loadPurchaseState();
     els.navSingles.addEventListener('click', () => setActiveModule('singles'));
+    els.navPurchase.addEventListener('click', () => setActiveModule('purchase'));
     els.navBags.addEventListener('click', () => setActiveModule('bags'));
+    els.pcParseBtn.addEventListener('click', parsePurchaseRows);
+    els.pcExportBtn.addEventListener('click', exportPurchaseCsv);
+    [els.pcPlatformFee, els.pcProcessingFee, els.pcUnderperform, els.pcTargetProfit, els.pcOfferPrice].forEach((el) => {
+      el.addEventListener('input', renderPurchase);
+    });
     els.createBagBtn.addEventListener('click', createBag);
     els.exportBagsCsvBtn.addEventListener('click', exportBagsCsv);
     els.addBagItemBtn.addEventListener('click', addBagItem);

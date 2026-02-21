@@ -48,3 +48,8 @@
 - Added status transitions + settings + customer summary surfaces for Bag Builder.
 - Implemented status change auditing (including override flag), high-value badge, and editable deadline/high-value settings.
 - Validation: node --check app.js, node --test tests\\*.test.js (all pass).
+
+### 2026-02-21 01:32:21
+- Added Purchase Calculator module route + core UI wiring using existing PurchaseCalculatorCore helpers.
+- Implemented settings inputs, bulk paste parse/analyze, results KPIs, tier bucket counts, and CSV export.
+- Validation: node --check app.js, node --test tests\\*.test.js (all pass).
