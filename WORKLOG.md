@@ -24,3 +24,7 @@
 
 ### Next check-in
 - Will post after first Bag Builder UI commit with hash + run steps.
+
+### 2026-02-20 22:31:35
+- Started Bag Builder implementation planning pass on desktop repo.
+- Confirmed current architecture: static SPA (index.html + app.js + core modules + tests).
