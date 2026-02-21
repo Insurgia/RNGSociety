@@ -667,8 +667,58 @@
   }
 
   function printBagLabel() {
-    if (els.bagLabel.hidden) generateBagLabel();
-    window.print();
+    const bag = bagDb.bags.find((b) => b.id === selectedBagId);
+    if (!bag) return;
+    const customer = bagDb.customers.find((c) => c.id === bag.customerId) || { username: 'unknown', platform: '' };
+    const deepLink = `${window.location.origin + window.location.pathname}?module=bags&bag=${encodeURIComponent(bag.id)}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(deepLink)}`;
+
+    const printWin = window.open('', '_blank', 'width=520,height=760');
+    if (!printWin) {
+      showToast('Popup blocked. Allow popups to print label.');
+      return;
+    }
+
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Bag Label ${bag.bagId}</title>
+    <style>
+      @page { size: 4in 6in; margin: 0.2in; }
+      body { font-family: Arial, sans-serif; margin: 0; color: #111; }
+      .label { border: 2px solid #111; border-radius: 10px; padding: 14px; width: 100%; box-sizing: border-box; }
+      .brand { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #555; margin-bottom: 8px; }
+      .bag { font-size: 28px; font-weight: 800; margin: 2px 0 10px; }
+      .row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 13px; }
+      .key { color: #666; }
+      .qr-wrap { margin-top: 12px; display: flex; justify-content: center; }
+      .qr { width: 190px; height: 190px; border: 1px solid #999; }
+      .small { margin-top: 8px; font-size: 10px; color: #666; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <section class="label">
+      <div class="brand">RNG Society · Bag Label</div>
+      <div class="bag">${bag.bagId}</div>
+      <div class="row"><span class="key">Customer</span><strong>${customer.username}</strong></div>
+      <div class="row"><span class="key">Platform</span><strong>${customer.platform || 'n/a'}</strong></div>
+      <div class="row"><span class="key">Status</span><strong>${bag.status}</strong></div>
+      <div class="row"><span class="key">Bin</span><strong>${bag.binLocation || 'n/a'}</strong></div>
+      <div class="qr-wrap"><img class="qr" src="${qrUrl}" alt="Bag QR" /></div>
+      <div class="small">${deepLink}</div>
+    </section>
+    <script>
+      const img = document.querySelector('.qr');
+      const printNow = () => { window.focus(); window.print(); setTimeout(() => window.close(), 200); };
+      if (img && !img.complete) img.addEventListener('load', printNow); else printNow();
+    <\/script>
+  </body>
+</html>`;
+
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
   }
 
   function updateBagStatus() {
