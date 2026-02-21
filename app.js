@@ -733,9 +733,20 @@
       const wrapped = pdf.splitTextToSize(deepLink, 230);
       pdf.text(wrapped, 26, 320);
 
-      pdf.save(`bag-label-${bag.bagId}.pdf`);
-      showToast('Label PDF downloaded');
-    } catch {
+      const filename = `bag-label-${bag.bagId}.pdf`;
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+
+      showToast('Label PDF downloaded (v3)');
+    } catch (err) {
+      console.error('label-pdf-error', err);
       showToast('Failed to generate PDF label');
     }
   }
