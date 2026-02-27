@@ -10,7 +10,7 @@ const LAB_SEED_TOOLS = [
   { id: 'singles-core', name: 'Singles Calculator', status: 'stable', category: 'Core', summary: 'Production calculator for single-card pricing.', tags: ['calculator', 'core'], testTarget: 'singles' },
   { id: 'purchase-core', name: 'Purchase Calculator', status: 'stable', category: 'Core', summary: 'Production lot-buying calculator.', tags: ['calculator', 'core'], testTarget: 'purchase' },
   { id: 'bags-core', name: 'Bag Builder', status: 'stable', category: 'Core', summary: 'Production bag tracking tool.', tags: ['core', 'workflow'], testTarget: 'bags' },
-  { id: 'scanner-core', name: 'Scanner Core', status: 'wip', category: 'Scanner', summary: 'OCR + image matching scanner stack.', tags: ['ocr', 'matching', 'scanner'], testTarget: 'scanner' },
+  { id: 'scanner-core', name: 'Scanner Core', status: 'wip', category: 'Scanner', summary: 'OCR + AI + image matching scanner stack.', tags: ['ocr', 'matching', 'scanner', 'ai'], testTarget: 'scanner' },
   { id: 'scanner-lab', name: 'Scanner Lab', status: 'wip', category: 'Scanner', summary: 'Experimental scanner tuning and edge-case QA.', tags: ['scanner', 'experiments'], testTarget: 'scanner' },
 ]
 
@@ -136,6 +136,7 @@ function BagBuilderTab() {
 function hammingDistance(a, b) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d }
 function confidenceFromDistance(distance, bits = 64) { return Math.round(Math.max(0, 1 - distance / bits) * 100) }
 async function fileToBitmap(file) { return createImageBitmap(file) }
+function fileToDataUrl(file) { return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file) }) }
 function bitmapToCanvas(bitmap) { const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height; c.getContext('2d', { willReadFrequently: true }).drawImage(bitmap, 0, 0); return c }
 function averageHashFromCanvas(canvas, size = 8) {
   const c = document.createElement('canvas'); c.width = size; c.height = size
@@ -146,8 +147,7 @@ function averageHashFromCanvas(canvas, size = 8) {
   return gray.map((g) => (g >= avg ? '1' : '0')).join('')
 }
 function detectCardCropRect(canvas) {
-  const w = canvas.width, h = canvas.height
-  const ratio = 0.715
+  const w = canvas.width, h = canvas.height, ratio = 0.715
   let cw = Math.floor(w * 0.78), ch = Math.floor(cw / ratio)
   if (ch > h * 0.9) { ch = Math.floor(h * 0.9); cw = Math.floor(ch * ratio) }
   return { x: Math.floor((w - cw) / 2), y: Math.floor((h - ch) / 2), w: cw, h: ch }
@@ -168,6 +168,13 @@ function blendedDistance(q, r) {
   const d3 = hammingDistance(q.innerHash, r.innerHash || r.hash || q.innerHash)
   return Math.round(d1 * 0.2 + d2 * 0.5 + d3 * 0.3)
 }
+function safeJsonParse(text) {
+  try { return JSON.parse(text) } catch {
+    const match = String(text || '').match(/\{[\s\S]*\}/)
+    if (!match) return null
+    try { return JSON.parse(match[0]) } catch { return null }
+  }
+}
 
 function ScannerTab() {
   const [referenceDb, setReferenceDb] = useState(() => { try { return JSON.parse(localStorage.getItem(DB_KEY) || '[]') } catch { return [] } })
@@ -176,8 +183,14 @@ function ScannerTab() {
   const [results, setResults] = useState([])
   const [ocrText, setOcrText] = useState('')
   const [ocrStatus, setOcrStatus] = useState('')
+  const [aiApiKey, setAiApiKey] = useState(() => localStorage.getItem('rng_ai_key') || '')
+  const [aiModel, setAiModel] = useState(() => localStorage.getItem('rng_ai_model') || 'openai/gpt-4o-mini')
+  const [aiStatus, setAiStatus] = useState('')
+  const [aiResult, setAiResult] = useState(null)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
+  useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
+  useEffect(() => { localStorage.setItem('rng_ai_model', aiModel) }, [aiModel])
 
   const buildDb = async (files) => {
     const imageFiles = Array.from(files || []).filter((f) => f.type.startsWith('image/'))
@@ -186,10 +199,7 @@ function ScannerTab() {
     const next = []
     for (let i = 0; i < imageFiles.length; i++) {
       const f = imageFiles[i]
-      try {
-        const bitmap = await fileToBitmap(f)
-        next.push({ id: `${f.name}-${i}`, name: f.name, previewUrl: URL.createObjectURL(f), ...computeHashes(bitmap) })
-      } catch {}
+      try { next.push({ id: `${f.name}-${i}`, name: f.name, previewUrl: URL.createObjectURL(f), ...computeHashes(await fileToBitmap(f)) }) } catch {}
       setDbStatus(`Building DB... ${i + 1}/${imageFiles.length}`)
     }
     setReferenceDb(next)
@@ -217,12 +227,56 @@ function ScannerTab() {
       const out = await recognize(file, 'eng')
       setOcrText(out?.data?.text?.trim() || '')
       setOcrStatus('OCR complete.')
+    } catch { setOcrStatus('OCR failed. Check console/network and retry.') }
+  }
+
+  const verifyAgainstDb = (ai) => {
+    if (!ai || !referenceDb.length) return null
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const target = norm(`${ai.card_name || ''} ${ai.set_name || ''} ${ai.card_number || ''}`)
+    const scored = referenceDb.map((r) => {
+      const hay = norm(r.name)
+      let score = 0
+      if (hay.includes(norm(ai.card_name))) score += 60
+      if (ai.card_number && hay.includes(norm(ai.card_number))) score += 25
+      if (ai.set_name && hay.includes(norm(ai.set_name))) score += 15
+      if (target && hay.includes(target)) score += 20
+      return { ...r, verifyScore: score }
+    }).sort((a, b) => b.verifyScore - a.verifyScore)
+    return scored[0]?.verifyScore > 0 ? scored[0] : null
+  }
+
+  const runAiIdentify = async (file) => {
+    if (!file) return setAiStatus('Pick a card image first.')
+    if (!aiApiKey) return setAiStatus('Add API key first.')
+    setAiStatus('AI identify running...')
+    setAiResult(null)
+    try {
+      const imageDataUrl = await fileToDataUrl(file)
+      const prompt = `Identify this trading card. Return ONLY valid JSON with keys: card_name, set_name, card_number, rarity, confidence (0-100), alternatives (array of up to 3 strings), reasoning_short.`
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
+        body: JSON.stringify({
+          model: aiModel,
+          temperature: 0.1,
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      const text = json?.choices?.[0]?.message?.content || ''
+      const parsed = safeJsonParse(text)
+      if (!parsed) throw new Error('Model did not return parseable JSON')
+      const verified = verifyAgainstDb(parsed)
+      setAiResult({ ...parsed, verifiedMatch: verified || null })
+      setAiStatus('AI identify complete.')
     } catch (e) {
-      setOcrStatus('OCR failed. Check console/network and retry.')
+      setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
     }
   }
 
-  return <Card title="Scanner Core" description="OCR scanner + database image matching in one lab module.">
+  return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify.">
     <div className="scanner-grid">
       <div className="panel">
         <h3>Reference DB</h3>
@@ -243,7 +297,22 @@ function ScannerTab() {
         <h3>OCR Test</h3>
         <label>Card image for OCR<input type="file" accept="image/*" onChange={(e) => runOcr(e.target.files?.[0])} /></label>
         <p className="muted">{ocrStatus}</p>
-        <textarea rows={8} value={ocrText} onChange={(e) => setOcrText(e.target.value)} placeholder="OCR output appears here..." />
+        <textarea rows={6} value={ocrText} onChange={(e) => setOcrText(e.target.value)} placeholder="OCR output appears here..." />
+      </div>
+
+      <div className="panel">
+        <h3>AI Identify (Vision)</h3>
+        <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label>
+        <label>Model<input value={aiModel} onChange={(e) => setAiModel(e.target.value)} /></label>
+        <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
+        <p className="muted">{aiStatus}</p>
+        {aiResult ? <div className="ai-result">
+          <div><strong>{aiResult.card_name || 'Unknown card'}</strong></div>
+          <div className="muted">Set: {aiResult.set_name || '-'} · No: {aiResult.card_number || '-'} · Rarity: {aiResult.rarity || '-'}</div>
+          <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
+          {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
+          {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
+        </div> : null}
       </div>
     </div>
   </Card>

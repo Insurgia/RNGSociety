@@ -86,3 +86,4 @@ input, textarea, select { width: 100%; padding: 9px; border-radius: 8px; border:
   .theme-toggle { margin-left: 0; }
   .tabs5, .grid.three, .grid.four, .kpi, .scanner-grid { grid-template-columns: 1fr; }
 }
+.ai-result { border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--surface-2); }
