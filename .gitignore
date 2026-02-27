@@ -20,3 +20,8 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Local dataset artifacts
+data/pokemon/images/
+tmp-pokemon-tcg-data/
+

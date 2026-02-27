@@ -1,5 +1,6 @@
 const dbFolderInput = document.getElementById('dbFolder');
 const buildDbBtn = document.getElementById('buildDbBtn');
+const loadPokemonDbBtn = document.getElementById('loadPokemonDbBtn');
 const clearDbBtn = document.getElementById('clearDbBtn');
 const dbStatus = document.getElementById('dbStatus');
 
@@ -8,7 +9,7 @@ const matchBtn = document.getElementById('matchBtn');
 const matchStatus = document.getElementById('matchStatus');
 const resultsEl = document.getElementById('results');
 
-const DB_KEY = 'rng_image_match_db_v1';
+const DB_KEY = 'rng_image_match_db_v2';
 let referenceDb = [];
 
 function saveDb() {
@@ -42,8 +43,14 @@ function confidenceFromDistance(distance, bits = 64) {
 }
 
 async function fileToImageBitmap(file) {
-  const bitmap = await createImageBitmap(file);
-  return bitmap;
+  return createImageBitmap(file);
+}
+
+async function urlToImageBitmap(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  const blob = await res.blob();
+  return createImageBitmap(blob);
 }
 
 function averageHashFromBitmap(bitmap, size = 8) {
@@ -55,9 +62,7 @@ function averageHashFromBitmap(bitmap, size = 8) {
 
   const { data } = ctx.getImageData(0, 0, size, size);
   const gray = [];
-  for (let i = 0; i < data.length; i += 4) {
-    gray.push(Math.round((data[i] + data[i + 1] + data[i + 2]) / 3));
-  }
+  for (let i = 0; i < data.length; i += 4) gray.push(Math.round((data[i] + data[i + 1] + data[i + 2]) / 3));
   const avg = gray.reduce((a, b) => a + b, 0) / gray.length;
   return gray.map((g) => (g >= avg ? '1' : '0')).join('');
 }
@@ -78,12 +83,7 @@ async function buildReferenceDb(files) {
       const bitmap = await fileToImageBitmap(file);
       const hash = averageHashFromBitmap(bitmap);
       const previewUrl = URL.createObjectURL(file);
-      nextDb.push({
-        id: `${file.name}-${i}`,
-        name: file.webkitRelativePath || file.name,
-        hash,
-        previewUrl,
-      });
+      nextDb.push({ id: `${file.name}-${i}`, name: file.webkitRelativePath || file.name, hash, previewUrl });
       dbStatus.textContent = `Building DB... ${i + 1}/${imageFiles.length}`;
     } catch (err) {
       console.warn('Failed to hash image', file.name, err);
@@ -93,6 +93,43 @@ async function buildReferenceDb(files) {
   referenceDb = nextDb;
   saveDb();
   dbStatus.textContent = `DB ready. Indexed ${referenceDb.length} images.`;
+}
+
+async function buildFromPokemonManifest() {
+  dbStatus.textContent = 'Loading Pokemon manifest...';
+  const res = await fetch('./data/pokemon/cards.json');
+  if (!res.ok) {
+    dbStatus.textContent = 'Could not load ./data/pokemon/cards.json';
+    return;
+  }
+
+  const cards = await res.json();
+  dbStatus.textContent = `Hashing ${cards.length} Pokemon card images... (first run may take a while)`;
+  const nextDb = [];
+
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    const src = c.localImage ? `./data/pokemon/${c.localImage}` : c.imageUrl;
+    if (!src) continue;
+    try {
+      const bitmap = await urlToImageBitmap(src);
+      const hash = averageHashFromBitmap(bitmap);
+      nextDb.push({
+        id: c.id,
+        name: `${c.name} (${c.setName} #${c.number})`,
+        hash,
+        previewUrl: src,
+        meta: c,
+      });
+    } catch (err) {
+      // Skip failed image pulls
+    }
+    if ((i + 1) % 100 === 0) dbStatus.textContent = `Hashing Pokemon images... ${i + 1}/${cards.length}`;
+  }
+
+  referenceDb = nextDb;
+  saveDb();
+  dbStatus.textContent = `Pokemon DB ready. Indexed ${referenceDb.length} images.`;
 }
 
 function scoreClass(confidence) {
@@ -118,10 +155,7 @@ function renderResults(matches) {
     img.alt = match.name;
 
     const meta = document.createElement('div');
-    meta.innerHTML = `
-      <div><strong>${match.name}</strong></div>
-      <div class="score ${scoreClass(match.confidence)}">Confidence: ${match.confidence}% (distance ${match.distance})</div>
-    `;
+    meta.innerHTML = `<div><strong>${match.name}</strong></div><div class="score ${scoreClass(match.confidence)}">Confidence: ${match.confidence}% (distance ${match.distance})</div>`;
 
     div.appendChild(img);
     div.appendChild(meta);
@@ -131,7 +165,7 @@ function renderResults(matches) {
 
 async function runMatch(file) {
   if (!referenceDb.length) {
-    matchStatus.textContent = 'Build the reference DB first.';
+    matchStatus.textContent = 'Build or load a reference DB first.';
     return;
   }
 
@@ -142,11 +176,7 @@ async function runMatch(file) {
   const matches = referenceDb
     .map((ref) => {
       const distance = hammingDistance(queryHash, ref.hash);
-      return {
-        ...ref,
-        distance,
-        confidence: confidenceFromDistance(distance),
-      };
+      return { ...ref, distance, confidence: confidenceFromDistance(distance) };
     })
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 8);
@@ -161,6 +191,10 @@ buildDbBtn.addEventListener('click', async () => {
     return;
   }
   await buildReferenceDb(dbFolderInput.files);
+});
+
+loadPokemonDbBtn?.addEventListener('click', async () => {
+  await buildFromPokemonManifest();
 });
 
 clearDbBtn.addEventListener('click', clearDb);

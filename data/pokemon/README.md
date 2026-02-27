@@ -1,7 +1,7 @@
 # Pokemon DB (auto-generated from pokemon-tcg-data)
 
-Cards: 200
-Images downloaded: false
+Cards: 2000
+Images downloaded: true
 
 Regenerate examples:
 ```bash
