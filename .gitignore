@@ -25,3 +25,7 @@ Thumbs.db
 data/pokemon/images/
 tmp-pokemon-tcg-data/
 
+
+# Never track dependencies
+ui/node_modules/**
+

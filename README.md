@@ -1,54 +1,40 @@
 # RNGSociety
 
-An all-in-one Whatnot seller app.
+RNGSociety now has a single canonical frontend: `ui/`.
 
-## MVP: TCG Stream Profit Calculator
+## Canonical structure
 
-This repo now includes a production-ready single-page calculator to help TCG streamers estimate:
+- `ui/` ? active React/Vite app (source of truth)
+- `ui/src/` ? app source code
+- `ui/public/` ? static assets bundled by Vite
+- `ui/dist/` ? deploy artifact currently used by Cloudflare Pages in this repo setup
+- `archive/legacy-2026-02-27/` ? preserved old static/prototype app files (not deleted)
+- `data/`, `scripts/`, `tests/` ? supporting data tooling/tests
 
-- break-even starting price
-- recommended start with configurable profit buffer
-- estimated profit after platform fee and shipping allocation
+## Current active modules
 
-### Run locally
+- Singles Calculator
+- Purchase Calculator
+- Bag Builder
+
+Scanner/Scanner Lab code has been intentionally sidelined per product decision and preserved in legacy/public paths.
+
+## Local development
 
 ```bash
-python3 -m http.server 4173
+cd ui
+npm install
+npm run dev
 ```
 
-Then open `http://localhost:4173`.
+## Production build
 
-### Features shipped
+```bash
+cd ui
+npm install
+npm run build
+```
 
-- configurable shipping-per-card math
-- configurable Whatnot-style fee model: commission % + processing % + fixed processing $
-- break-even computed with cent-level fee rounding
-- recommended start rounded to nearest `$0.25`
-- detailed expandable cost breakdown (commission, processing, total fees, net earnings, profit)
-- copy-to-clipboard listing snippet
-- localStorage persistence for last-used values
+## Deploy
 
-
-### Image Matcher Lab (new)
-
-A standalone in-browser image matching prototype is available at:
-- /image-matching.html
-
-Use it to:
-1. Build a local reference DB from a folder of images
-2. Upload/capture a query image
-3. See top visual matches by perceptual hash distance
-
-No OCR required for this flow.
-
-
-### Dataset Augmentation (Phase 2.5)
-
-To improve real-world camera matching without scraping search engines, generate synthetic angle/lighting variants:
-
-`ash
-python scripts/augment_card_images.py --input data/pokemon/images --output data/pokemon/augmented --per-image 50 --max-images 2000
-`
-
-This creates a folder per card id with many variants (ase.jpg, ug_*.jpg).
-
+See `DEPLOYMENT.md` for the dual-remote + Cloudflare workflow.
