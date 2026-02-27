@@ -5,6 +5,33 @@ const pct = (n) => `${Number(n || 0).toFixed(1)}%`
 const round2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100
 const ceilQuarter = (n) => Math.ceil(Number(n || 0) * 4) / 4
 
+const LAB_SEED_TOOLS = [
+  {
+    id: 'scanner-core',
+    name: 'Scanner Core',
+    status: 'wip',
+    category: 'Scanner',
+    summary: 'Card scan ingestion + normalization pipeline.',
+    tags: ['ocr', 'pipeline', 'scanner'],
+  },
+  {
+    id: 'scanner-lab',
+    name: 'Scanner Lab',
+    status: 'wip',
+    category: 'Scanner',
+    summary: 'Experimental scan models, confidence tuning, edge-case QA.',
+    tags: ['experiments', 'qa', 'vision'],
+  },
+  {
+    id: 'pricing-rules',
+    name: 'Pricing Rules Sandbox',
+    status: 'planned',
+    category: 'Pricing',
+    summary: 'Prototype pricing curves and fee logic before promoting to production tools.',
+    tags: ['pricing', 'simulation'],
+  },
+]
+
 function Card({ title, description, children }) {
   return (
     <section className="card">
@@ -65,7 +92,6 @@ function SinglesTab() {
       totalFees: round2(totalFees),
       netEarnings: round2(netEarnings),
       profit: round2(profit),
-      buffer,
     }
   }, [cardCost, freebieCost, shipFee, cardsPerOrder, commissionPct, processingPct, processingFixed, bufferPct])
 
@@ -120,11 +146,7 @@ function parseBulkPaste(text) {
         }
       }
       const fallback = Number(line.match(/\$?([0-9]+(?:\.[0-9]+)?)/)?.[1] || 0)
-      return {
-        cardName: line.replace(/\$?[0-9]+(?:\.[0-9]+)?/, '').trim() || line,
-        qty: 1,
-        marketValue: fallback,
-      }
+      return { cardName: line, qty: 1, marketValue: fallback }
     })
 }
 
@@ -142,26 +164,19 @@ function PurchaseTab() {
     const under = Number(underperform) / 100
     const target = Number(targetProfit) / 100
 
-    const analyzed = rows.map((r) => {
+    const totals = rows.reduce((acc, r) => {
       const market = Number(r.marketValue) || 0
       const qty = Number(r.qty) || 1
       const multiplier = market <= 3 ? 0.9 : market <= 6 ? 0.85 : market <= 12 ? 0.8 : market <= 25 ? 0.75 : market <= 45 ? 0.7 : market <= 75 ? 0.67 : 0.62
       const expectedClose = market * multiplier
       const netAfterFees = expectedClose * (1 - (pf + pr))
       const riskAdjustedNet = netAfterFees * (1 - under)
-      return { ...r, qty, expectedClose, netAfterFees, riskAdjustedNet }
-    })
-
-    const totals = analyzed.reduce((acc, r) => {
-      acc.market += r.marketValue * r.qty
-      acc.stream += r.expectedClose * r.qty
-      acc.net += r.netAfterFees * r.qty
-      acc.risk += r.riskAdjustedNet * r.qty
+      acc.market += market * qty
+      acc.risk += riskAdjustedNet * qty
       return acc
-    }, { market: 0, stream: 0, net: 0, risk: 0 })
+    }, { market: 0, risk: 0 })
 
-    const recommendedOffer = totals.risk * (1 - target)
-    return { totals, recommendedOffer }
+    return { totals, recommendedOffer: totals.risk * (1 - target) }
   }, [rows, platformFee, processingFee, underperform, targetProfit])
 
   return (
@@ -200,35 +215,26 @@ function BagBuilderTab() {
   }, [bags])
 
   const activeBag = bags.find((b) => b.id === activeId) || null
-
   const createBag = () => {
     if (!username.trim()) return
     const id = crypto.randomUUID()
     const next = { id, bagId: `BAG-${String(bags.length + 1).padStart(5, '0')}`, username: username.trim(), platform, status: 'OPEN', items: [] }
-    setBags((prev) => [next, ...prev])
-    setActiveId(id)
+    setBags((prev) => [next, ...prev]); setActiveId(id)
   }
-
   const addItem = () => {
     if (!activeBag || !itemName.trim()) return
     const item = { id: crypto.randomUUID(), name: itemName.trim(), qty: Math.max(1, Number(qty) || 1), salePrice: Math.max(0, Number(salePrice) || 0) }
     setBags((prev) => prev.map((b) => b.id === activeBag.id ? { ...b, items: [...b.items, item] } : b))
-    setItemName('')
-    setQty('1')
-    setSalePrice('0')
+    setItemName(''); setQty('1'); setSalePrice('0')
   }
 
   const totals = useMemo(() => {
     if (!activeBag) return { items: 0, value: 0 }
-    return activeBag.items.reduce((acc, i) => {
-      acc.items += i.qty
-      acc.value += i.qty * i.salePrice
-      return acc
-    }, { items: 0, value: 0 })
+    return activeBag.items.reduce((acc, i) => ({ items: acc.items + i.qty, value: acc.value + i.qty * i.salePrice }), { items: 0, value: 0 })
   }, [activeBag])
 
   return (
-    <Card title="Bag Builder" description="Customer bag tracking (scanner modules intentionally excluded for now).">
+    <Card title="Bag Builder" description="Customer bag tracking.">
       <div className="grid three">
         <label>Customer username<input value={username} onChange={(e) => setUsername(e.target.value)} /></label>
         <label>Platform<input value={platform} onChange={(e) => setPlatform(e.target.value)} /></label>
@@ -240,8 +246,7 @@ function BagBuilderTab() {
           <h3>Active bags</h3>
           {bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => (
             <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}>
-              <span>{b.bagId}</span>
-              <small>{b.username} · {b.items.length} items</small>
+              <span>{b.bagId}</span><small>{b.username} · {b.items.length} items</small>
             </button>
           ))}
         </div>
@@ -268,12 +273,117 @@ function BagBuilderTab() {
   )
 }
 
+function LabEnvironment() {
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [customTools, setCustomTools] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('rng-lab-custom-tools-v1') || '[]') } catch { return [] }
+  })
+  const [activeToolId, setActiveToolId] = useState(null)
+  const [draft, setDraft] = useState({ name: '', summary: '', category: 'General' })
+
+  useEffect(() => {
+    localStorage.setItem('rng-lab-custom-tools-v1', JSON.stringify(customTools))
+  }, [customTools])
+
+  const allTools = useMemo(() => [...LAB_SEED_TOOLS, ...customTools], [customTools])
+
+  const filtered = useMemo(() => allTools.filter((tool) => {
+    if (statusFilter !== 'all' && tool.status !== statusFilter) return false
+    if (!query.trim()) return true
+    const hay = `${tool.name} ${tool.summary} ${tool.category} ${(tool.tags || []).join(' ')}`.toLowerCase()
+    return hay.includes(query.toLowerCase())
+  }), [allTools, query, statusFilter])
+
+  useEffect(() => {
+    if (!activeToolId && filtered.length) setActiveToolId(filtered[0].id)
+    if (activeToolId && !allTools.find((t) => t.id === activeToolId) && filtered.length) setActiveToolId(filtered[0].id)
+  }, [filtered, allTools, activeToolId])
+
+  const active = allTools.find((t) => t.id === activeToolId) || null
+
+  const noteKey = active ? `rng-lab-note-${active.id}` : null
+  const [note, setNote] = useState('')
+  useEffect(() => { setNote(noteKey ? localStorage.getItem(noteKey) || '' : '') }, [noteKey])
+  const persistNote = (text) => {
+    setNote(text)
+    if (noteKey) localStorage.setItem(noteKey, text)
+  }
+
+  const addDraft = () => {
+    if (!draft.name.trim()) return
+    setCustomTools((prev) => [{
+      id: `custom-${crypto.randomUUID()}`,
+      name: draft.name.trim(),
+      summary: draft.summary.trim() || 'WIP tool module.',
+      category: draft.category.trim() || 'General',
+      status: 'wip',
+      tags: ['custom', 'wip'],
+    }, ...prev])
+    setDraft({ name: '', summary: '', category: 'General' })
+  }
+
+  const statusClass = (status) => `status-pill ${status}`
+
+  return (
+    <Card title="RNG Lab" description="Integrated WIP environment for current and future tools.">
+      <div className="lab-shell">
+        <aside className="panel lab-sidebar">
+          <div className="grid" style={{ gap: 8 }}>
+            <input placeholder="Search lab tools..." value={query} onChange={(e) => setQuery(e.target.value)} />
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="wip">WIP</option>
+              <option value="planned">Planned</option>
+              <option value="stable">Stable</option>
+            </select>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            {filtered.map((tool) => (
+              <button key={tool.id} className={`list-row ${activeToolId === tool.id ? 'active' : ''}`} onClick={() => setActiveToolId(tool.id)}>
+                <span>{tool.name}</span>
+                <small>{tool.category}</small>
+              </button>
+            ))}
+            {filtered.length === 0 ? <p className="muted">No matching tools.</p> : null}
+          </div>
+        </aside>
+
+        <section className="panel lab-main">
+          {active ? (
+            <>
+              <div className="lab-head">
+                <h3>{active.name}</h3>
+                <span className={statusClass(active.status)}>{active.status.toUpperCase()}</span>
+              </div>
+              <p className="muted">{active.summary}</p>
+              <div className="chip-row">
+                {(active.tags || []).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+              </div>
+              <label style={{ marginTop: 10 }}>Lab notes / spec
+                <textarea rows={7} value={note} onChange={(e) => persistNote(e.target.value)} placeholder="Use this as the persistent WIP notebook for this module." />
+              </label>
+            </>
+          ) : <p className="muted">Select a lab tool.</p>}
+
+          <div className="lab-create">
+            <h4>Add future WIP tool</h4>
+            <div className="grid three">
+              <label>Name<input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></label>
+              <label>Category<input value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))} /></label>
+              <label style={{ alignSelf: 'end' }}><button className="btn" onClick={addDraft}>Add to Lab</button></label>
+            </div>
+            <label style={{ marginTop: 8 }}>Summary<textarea rows={3} value={draft.summary} onChange={(e) => setDraft((d) => ({ ...d, summary: e.target.value }))} /></label>
+          </div>
+        </section>
+      </div>
+    </Card>
+  )
+}
+
 export default function App() {
   const [tab, setTab] = useState('singles')
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('rng-theme')
-    return saved === 'light' ? 'light' : 'dark'
-  })
+  const [theme, setTheme] = useState(() => localStorage.getItem('rng-theme') === 'light' ? 'light' : 'dark')
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
@@ -281,25 +391,23 @@ export default function App() {
   }, [theme])
 
   const tabs = [
-    { id: 'singles', label: 'Singles Calculator' },
-    { id: 'purchase', label: 'Purchase Calculator' },
-    { id: 'bags', label: 'Bag Builder' },
+    { id: 'singles', label: 'Singles' },
+    { id: 'purchase', label: 'Purchase' },
+    { id: 'bags', label: 'Bags' },
+    { id: 'lab', label: 'Lab' },
   ]
 
   return (
     <main className="app">
       <header className="header">
         <div className="logo">R</div>
-        <div>
-          <div className="eyebrow">RNG Society</div>
-          <h1>Toolkit</h1>
-        </div>
+        <div><div className="eyebrow">RNG Society</div><h1>Toolkit</h1></div>
         <button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           {theme === 'dark' ? '?? Light mode' : '?? Dark mode'}
         </button>
       </header>
 
-      <nav className="tabs">
+      <nav className="tabs tabs4">
         {tabs.map((t) => (
           <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -308,6 +416,7 @@ export default function App() {
       {tab === 'singles' && <SinglesTab />}
       {tab === 'purchase' && <PurchaseTab />}
       {tab === 'bags' && <BagBuilderTab />}
+      {tab === 'lab' && <LabEnvironment />}
     </main>
   )
 }
