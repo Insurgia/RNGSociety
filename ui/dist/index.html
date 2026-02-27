@@ -3,17 +3,296 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f172a" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="RNG Toolkit" />
-    <link rel="icon" type="image/png" href="/pwa-192.png" />
-    <link rel="apple-touch-icon" href="/pwa-192.png" />
-    <title>RNG Society Toolkit</title>
-    <script type="module" crossorigin src="/assets/index-COl0MUDJ.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CEkTOu56.css">
-  <link rel="manifest" href="/manifest.webmanifest"></head>
+    <title>RNG Society | TCG Stream Profit Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
   <body>
-    <div id="root"></div>
+    <main class="container">
+      <header class="header">
+        <div class="logo">R</div>
+        <div>
+          <p class="eyebrow">RNG Society</p>
+          <h1>Streamer Toolkit</h1>
+        </div>
+      </header>
+
+      <nav class="top-nav top-nav-4" aria-label="Module navigation">
+        <button id="navSingles" class="nav-btn active" data-module="singles">Singles Calculator</button>
+        <button id="navPurchase" class="nav-btn" data-module="purchase">Purchase Calculator</button>
+        <button id="navBags" class="nav-btn" data-module="bags">Bag Builder <span class="pro-pill">PRO</span></button>`n        <button id="navScanner" class="nav-btn" data-module="scanner">Scanner Lab</button>
+      </nav>
+
+      <section id="singlesModule" class="module module-active">
+      <section class="card">
+        <h2>Inputs</h2>
+        <div class="grid two-col">
+          <label class="field">
+            <span>Card Cost</span>
+            <div class="input-wrap"><span>$</span><input id="cardCost" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          </label>
+          <label class="field">
+            <span>Freebie Cost</span>
+            <div class="input-wrap"><span>$</span><input id="freebieCost" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          </label>
+        </div>
+
+        <div class="grid three-col shipping">
+          <label class="field">
+            <span>Shipping Paid</span>
+            <div class="input-wrap"><span>$</span><input id="shipFee" type="number" min="0" step="0.25" value="2" /></div>
+          </label>
+          <label class="field">
+            <span>Cards / Order</span>
+            <div class="input-wrap"><input id="cardsPerOrder" type="number" min="1" step="1" value="5" /></div>
+          </label>
+          <div class="pill" id="perCardShip">$0.40 / card</div>
+        </div>
+
+        <div class="grid three-col fee-grid">
+          <label class="field">
+            <span>Commission (%)</span>
+            <div class="input-wrap"><input id="commissionPct" type="number" min="0" max="100" step="0.1" value="8" /></div>
+          </label>
+          <label class="field">
+            <span>Processing (%)</span>
+            <div class="input-wrap"><input id="processingPct" type="number" min="0" max="100" step="0.1" value="2.9" /></div>
+          </label>
+          <label class="field">
+            <span>Processing Fixed ($)</span>
+            <div class="input-wrap"><span>$</span><input id="processingFixed" type="number" min="0" step="0.01" value="0.30" /></div>
+          </label>
+        </div>
+
+        <div>
+          <p class="buffer-label">Profit Buffer</p>
+          <div class="buffer-row" role="group" aria-label="Profit buffer options">
+            <button class="buffer-btn" data-buffer="0.1">10%</button>
+            <button class="buffer-btn active" data-buffer="0.15">15%</button>
+            <button class="buffer-btn" data-buffer="0.2">20%</button>
+            <button class="buffer-btn" data-buffer="0.25">25%</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="results">
+        <article class="metric warning">
+          <p>Break-Even Start</p>
+          <h3 id="breakEvenVal">—</h3>
+          <small>Minimum safe start price</small>
+          <small class="raw-note" id="breakEvenRaw"></small>
+        </article>
+        <article class="metric info">
+          <p>Recommended Start</p>
+          <h3 id="recommendVal">—</h3>
+          <small id="recommendHint">Enter card cost to calculate</small>
+          <small class="raw-note" id="recommendRaw"></small>
+        </article>
+        <article class="metric success" id="profitCard">
+          <p>Estimated Profit</p>
+          <h3 id="profitVal">—</h3>
+          <small>At recommended start</small>
+          <small class="raw-note" id="profitRaw"></small>
+        </article>
+      </section>
+      <p class="rounding-note">Displayed values are rounded to the nearest dollar.</p>
+
+      <section class="card breakdown-card">
+        <button class="breakdown-toggle" id="breakdownToggle" aria-expanded="false">Detailed Breakdown <span>▼</span></button>
+        <div id="breakdownPanel" class="breakdown-panel">
+          <div id="breakdownInner" class="breakdown-inner"></div>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="copyBtn" class="btn primary" disabled>Copy Listing Snippet</button>
+        <button id="resetBtn" class="btn secondary">Reset</button>
+      </section>
+      </section>
+
+      <section id="purchaseModule" class="module" hidden>
+        <section class="card">
+          <h2>Purchase Calculator</h2>
+          <div class="grid three-col">
+            <label class="field">
+              <span>Platform Fee (%)</span>
+              <div class="input-wrap"><input id="pcPlatformFee" type="number" min="0" max="100" step="0.1" value="12" /></div>
+            </label>
+            <label class="field">
+              <span>Processing (%)</span>
+              <div class="input-wrap"><input id="pcProcessingFee" type="number" min="0" max="100" step="0.1" value="3" /></div>
+            </label>
+            <label class="field">
+              <span>Underperform (%)</span>
+              <div class="input-wrap"><input id="pcUnderperform" type="number" min="0" max="100" step="0.1" value="15" /></div>
+            </label>
+          </div>
+          <div class="grid two-col" style="margin-top:10px;">
+            <label class="field">
+              <span>Target Profit (%)</span>
+              <div class="input-wrap"><input id="pcTargetProfit" type="number" min="0" max="100" step="0.1" value="25" /></div>
+            </label>
+            <label class="field">
+              <span>Offer Price ($)</span>
+              <div class="input-wrap"><span>$</span><input id="pcOfferPrice" type="number" min="0" step="0.01" value="0" /></div>
+            </label>
+          </div>
+          <label class="field" style="margin-top:10px;">
+            <span>Bulk Paste (Name - qty - $value)</span>
+            <div class="input-wrap"><input id="pcBulkPaste" type="text" placeholder="Pikachu - 2 - $12\nCharizard - 1 - $65" /></div>
+          </label>
+          <section class="actions" style="margin-top:12px;">
+            <button id="pcParseBtn" class="btn primary">Parse / Analyze</button>
+            <button id="pcExportBtn" class="btn secondary">Export CSV</button>
+          </section>
+          <div id="pcResults" class="breakdown-inner" style="margin-top:12px;"></div>
+          <div id="pcTiers" class="breakdown-inner" style="margin-top:12px;"></div>
+        </section>
+      </section>
+
+      <section id="bagsModule" class="module" hidden>
+        <section id="bagUpsell" class="card">
+          <h2>Bag Builder (Pro)</h2>
+          <p class="muted-copy">Bag Builder tracks customer bags across streams with status, ledger totals, and dispute-ready history.</p>
+          <p class="muted-copy">Upgrade to Pro to unlock this module.</p>
+        </section>
+
+        <section id="bagApp" class="card" hidden>
+          <h2>Bag Builder Dashboard</h2>
+          <div class="grid two-col">
+            <article class="metric info">
+              <p>Active Bags</p>
+              <h3 id="bagActiveCount">0</h3>
+            </article>
+            <article class="metric warning">
+              <p>Overdue Bags</p>
+              <h3 id="bagOverdueCount">0</h3>
+            </article>
+          </div>
+          <div class="grid two-col" style="margin-top:12px;">
+            <label class="field">
+              <span>Customer Username</span>
+              <div class="input-wrap"><input id="bagCustomerUsername" type="text" placeholder="whatnot_user" /></div>
+            </label>
+            <label class="field">
+              <span>Platform</span>
+              <div class="input-wrap"><input id="bagCustomerPlatform" type="text" placeholder="whatnot" value="whatnot" /></div>
+            </label>
+          </div>
+          <section class="actions" style="margin-top:12px;">
+            <button id="createBagBtn" class="btn primary">Create Bag</button>
+            <button id="exportBagsCsvBtn" class="btn secondary">Export Bags CSV</button>
+          </section>
+          <div id="bagList" class="breakdown-inner" style="margin-top:12px;"></div>
+
+          <section class="card" style="margin-top:12px;">
+            <h2>Customers</h2>
+            <div id="customerList" class="breakdown-inner"></div>
+          </section>
+
+          <section class="card" style="margin-top:12px;">
+            <h2>Bag Builder Settings</h2>
+            <div class="grid two-col">
+              <label class="field">
+                <span>Default Deadline Days</span>
+                <div class="input-wrap"><input id="settingDeadlineDays" type="number" min="1" step="1" value="60" /></div>
+              </label>
+              <label class="field">
+                <span>High Value Threshold ($)</span>
+                <div class="input-wrap"><span>$</span><input id="settingHighValue" type="number" min="0" step="1" value="150" /></div>
+              </label>
+            </div>
+            <section class="actions" style="margin-top:12px;">
+              <button id="saveBagSettingsBtn" class="btn secondary">Save Settings</button>
+            </section>
+          </section>
+
+          <section id="bagDetail" class="card" style="margin-top:12px;" hidden>
+            <h2>Bag Detail</h2>
+            <div id="bagDetailHeader" class="row" style="margin-bottom:10px;"></div>
+            <div class="grid two-col" style="margin-bottom:10px;">
+              <label class="field">
+                <span>Status</span>
+                <div class="input-wrap">
+                  <select id="bagStatusSelect" class="select-input">
+                    <option value="OPEN">OPEN</option>
+                    <option value="READY_TO_SHIP">READY_TO_SHIP</option>
+                    <option value="SHIPPING_PAID">SHIPPING_PAID</option>
+                    <option value="PACKED">PACKED</option>
+                    <option value="SHIPPED">SHIPPED</option>
+                    <option value="ARCHIVED">ARCHIVED</option>
+                    <option value="HOLD">HOLD</option>
+                  </select>
+                </div>
+              </label>
+            </div>
+            <div class="grid two-col">
+              <label class="field">
+                <span>Item Name</span>
+                <div class="input-wrap"><input id="bagItemName" type="text" placeholder="Pikachu IR" /></div>
+              </label>
+              <label class="field">
+                <span>Type</span>
+                <div class="input-wrap"><input id="bagItemType" type="text" value="SINGLE" /></div>
+              </label>
+            </div>
+            <div class="grid three-col" style="margin-top:10px;">
+              <label class="field">
+                <span>Qty</span>
+                <div class="input-wrap"><input id="bagItemQty" type="number" min="1" step="1" value="1" /></div>
+              </label>
+              <label class="field">
+                <span>Sale Price ($)</span>
+                <div class="input-wrap"><span>$</span><input id="bagItemSalePrice" type="number" min="0" step="0.01" value="0.00" /></div>
+              </label>
+              <label class="field">
+                <span>Weight (g)</span>
+                <div class="input-wrap"><input id="bagItemWeight" type="number" min="0" step="1" value="0" /></div>
+              </label>
+            </div>
+            <section class="actions" style="margin-top:12px;">
+              <button id="addBagItemBtn" class="btn primary">Quick Add Item</button>
+              <button id="markShippingPaidBtn" class="btn secondary">Mark Shipping Paid</button>
+            </section>
+            <section class="actions" style="margin-top:10px;">
+              <button id="generateLabelBtn" class="btn secondary">Generate Bag Label</button>
+              <button id="printLabelBtn" class="btn secondary">Download Label PDF (v3)</button>
+            </section>
+            <section id="bagLabel" class="card" style="margin-top:12px;" hidden>
+              <h2>Bag Label</h2>
+              <div id="bagLabelMeta" class="breakdown-inner"></div>
+              <div style="display:flex; justify-content:center; margin-top:10px;">
+                <img id="bagQrImg" alt="Bag QR code" style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:#fff;" />
+              </div>
+            </section>
+            <div id="bagLedger" class="breakdown-inner" style="margin-top:12px;"></div>
+            <div id="bagAudit" class="breakdown-inner" style="margin-top:12px;"></div>
+          </section>
+        </section>
+      </section>
+
+      <footer class="footer">Built for Whatnot TCG single streams. Prices shown in CAD.</footer>
+      <div class="toast" id="toast"></div>
+    
+      <section id="scannerModule" class="module" hidden>
+        <section class="card">
+          <h2>Scanner Test Lab</h2>
+          <p class="muted-copy">Run the full image matching pipeline directly inside the app. This includes debug stage previews and Pokemon DB loading.</p>
+          <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
+            <a class="btn secondary" href="./image-matching.html" target="_blank" rel="noopener">Open in New Tab</a>
+            <p class="muted-copy" style="margin:8px 0 0;">Tip: Use this embedded tester for workflow; external tab is only for troubleshooting.</p>
+          </div>
+          <iframe src="./image-matching.html" title="Scanner test lab" style="margin-top:12px;width:100%;height:75vh;border:1px solid #334155;border-radius:10px;background:#0b1220;"></iframe>
+        </section>
+      </section>
+    </main>
+
+    <script src="bagBuilderCore.js"></script>
+    <script src="purchaseCalculatorCore.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>
+
