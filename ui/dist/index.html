@@ -15,7 +15,7 @@
   <link rel="manifest" href="/manifest.webmanifest"></head>
   <body>
     <div id="root"></div>
-          <button id="scannerLabQuickTab" type="button" style="position:fixed;right:14px;bottom:14px;z-index:9999;background:#2563eb;color:#fff;border:0;padding:10px 14px;border-radius:999px;font:600 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer;">Scanner Lab</button>
+          <button id="scannerLabQuickTab" aria-label="Open Scanner Lab" type="button" style="position:fixed;right:14px;bottom:14px;z-index:9999;background:#2563eb;color:#fff;border:0;padding:10px 14px;border-radius:999px;font:600 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer;">Scanner Lab</button>
 
     <div id="scannerLabPanel" style="position:fixed;inset:0;z-index:9998;display:none;">
       <div id="scannerLabBackdrop" style="position:absolute;inset:0;background:rgba(2,6,23,.65);"></div>
@@ -24,7 +24,7 @@
           <strong style="color:#e5e7eb;font:600 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">Image Scanner Lab</strong>
           <button id="scannerLabClose" type="button" style="border:1px solid #475569;background:#1f2937;color:#e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;">Close</button>
         </header>
-        <iframe src="/image-matching.html" title="Scanner Lab" style="flex:1;border:0;background:#0b1220;"></iframe>
+        <iframe src="./image-matching.html?v=2" title="Scanner Lab" style="flex:1;border:0;background:#0b1220;"></iframe>
       </section>
     </div>
 
@@ -36,14 +36,24 @@
         const backdrop = document.getElementById('scannerLabBackdrop');
         if (!btn || !panel) return;
         const open = () => { panel.style.display = 'block'; document.body.style.overflow = 'hidden'; };
+        const wireScannerTab = () => {
+          const tab = Array.from(document.querySelectorAll('button,[role=tab]')).find(el => (el.textContent||'').trim().toLowerCase() === 'scanner');
+          if (tab && !tab.dataset.scannerWired) {
+            tab.dataset.scannerWired = '1';
+            tab.addEventListener('click', (e) => { e.preventDefault(); open(); });
+          }
+        };
         const close = () => { panel.style.display = 'none'; document.body.style.overflow = ''; };
         btn.addEventListener('click', open);
         closeBtn && closeBtn.addEventListener('click', close);
         backdrop && backdrop.addEventListener('click', close);
         window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+        wireScannerTab();
+        setInterval(wireScannerTab, 1200);
       })();
     </script>
   </body>
 </html>
+
 
 
