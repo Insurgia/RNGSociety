@@ -53,10 +53,16 @@
         <h2>Top Matches</h2>
         <div id="results"></div>
       </section>
+      <section class="card">
+        <h2>Debug Pipeline Preview</h2>
+        <p class="muted">Shows query processing stages: original, detected card crop, inner crop, and 8x8 hash preview.</p>
+        <div id="debugStages" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;"></div>
+      </section>
     </main>
 
     <script type="module" src="./image-matching.js"></script>
   </body>
 </html>
+
 
 

@@ -8,6 +8,7 @@ const queryFileInput = document.getElementById('queryFile');
 const matchBtn = document.getElementById('matchBtn');
 const matchStatus = document.getElementById('matchStatus');
 const resultsEl = document.getElementById('results');
+const debugStagesEl = document.getElementById('debugStages');
 
 const DB_KEY = 'rng_image_match_db_v3';
 let referenceDb = [];
@@ -147,7 +148,34 @@ function averageHashFromCanvas(canvas, size = 8) {
   return gray.map((g) => (g >= avg ? '1' : '0')).join('');
 }
 
-function computeMultiHashesFromBitmap(bitmap) {
+function renderCanvasThumb(canvas, label) {
+  if (!debugStagesEl) return;
+  const wrap = document.createElement('div');
+  wrap.style.background = '#0b1220';
+  wrap.style.border = '1px solid #334155';
+  wrap.style.borderRadius = '8px';
+  wrap.style.padding = '8px';
+
+  const img = document.createElement('img');
+  img.src = canvas.toDataURL('image/jpeg', 0.85);
+  img.style.width = '100%';
+  img.style.borderRadius = '6px';
+
+  const caption = document.createElement('div');
+  caption.textContent = label;
+  caption.className = 'muted';
+  caption.style.marginTop = '6px';
+
+  wrap.appendChild(img);
+  wrap.appendChild(caption);
+  debugStagesEl.appendChild(wrap);
+}
+
+function clearDebugStages() {
+  if (debugStagesEl) debugStagesEl.innerHTML = '';
+}
+
+function computeMultiHashesFromBitmap(bitmap, debug = false) {
   const full = bitmapToCanvas(bitmap);
   const cropRect = detectCardCropRect(full);
 
@@ -166,6 +194,21 @@ function computeMultiHashesFromBitmap(bitmap) {
   const ix = Math.floor((crop.width - iw) / 2);
   const iy = Math.floor((crop.height - ih) / 2);
   inner.getContext('2d', { willReadFrequently: true }).drawImage(crop, ix, iy, iw, ih, 0, 0, iw, ih);
+
+  const hashPreview = document.createElement('canvas');
+  hashPreview.width = 64;
+  hashPreview.height = 64;
+  const hctx = hashPreview.getContext('2d', { willReadFrequently: true });
+  hctx.imageSmoothingEnabled = false;
+  hctx.drawImage(inner, 0, 0, 8, 8, 0, 0, 64, 64);
+
+  if (debug) {
+    clearDebugStages();
+    renderCanvasThumb(full, '1) Original');
+    renderCanvasThumb(crop, '2) Detected card crop');
+    renderCanvasThumb(inner, '3) Inner crop');
+    renderCanvasThumb(hashPreview, '4) 8x8 hash preview');
+  }
 
   return {
     fullHash: averageHashFromCanvas(full),
@@ -295,7 +338,7 @@ async function runMatch(file) {
 
   matchStatus.textContent = 'Matching (phase 2 crop-aware)...';
   const bitmap = await fileToImageBitmap(file);
-  const query = computeMultiHashesFromBitmap(bitmap);
+  const query = computeMultiHashesFromBitmap(bitmap, true);
 
   const matches = referenceDb
     .map((ref) => {
@@ -333,3 +376,4 @@ matchBtn.addEventListener('click', async () => {
 });
 
 loadDb();
+
