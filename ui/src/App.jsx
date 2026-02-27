@@ -128,8 +128,8 @@ function BagBuilderTab() {
   const totals = useMemo(() => activeBag ? activeBag.items.reduce((acc, i) => ({ items: acc.items + i.qty, value: acc.value + i.qty * i.salePrice }), { items: 0, value: 0 }) : { items: 0, value: 0 }, [activeBag])
 
   return <Card title="Bag Builder" description="Customer bag tracking."><div className="grid three"><label>Customer username<input value={username} onChange={(e) => setUsername(e.target.value)} /></label><label>Platform<input value={platform} onChange={(e) => setPlatform(e.target.value)} /></label><label style={{ alignSelf: 'end' }}><button className="btn" onClick={createBag}>Create bag</button></label></div>
-    <div className="split" style={{ marginTop: 12 }}><div className="panel"><h3>Active bags</h3>{bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}><span>{b.bagId}</span><small>{b.username} · {b.items.length} items</small></button>)}</div>
-      <div className="panel"><h3>{activeBag ? `${activeBag.bagId} · ${activeBag.username}` : 'Select a bag'}</h3>{activeBag ? <><div className="grid three"><label>Item<input value={itemName} onChange={(e) => setItemName(e.target.value)} /></label><label>Qty<input value={qty} onChange={(e) => setQty(e.target.value)} /></label><label>Sale price<input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} /></label></div><button className="btn" style={{ marginTop: 10 }} onClick={addItem}>Add item</button><div className="kpi" style={{ marginTop: 12 }}><div className="pill"><span>Total qty</span><strong>{totals.items}</strong></div><div className="pill"><span>Total value</span><strong>{currency(totals.value)}</strong></div></div></> : <p className="muted">Create/select a bag to manage items.</p>}</div></div>
+    <div className="split" style={{ marginTop: 12 }}><div className="panel"><h3>Active bags</h3>{bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}><span>{b.bagId}</span><small>{b.username} ï¿½ {b.items.length} items</small></button>)}</div>
+      <div className="panel"><h3>{activeBag ? `${activeBag.bagId} ï¿½ ${activeBag.username}` : 'Select a bag'}</h3>{activeBag ? <><div className="grid three"><label>Item<input value={itemName} onChange={(e) => setItemName(e.target.value)} /></label><label>Qty<input value={qty} onChange={(e) => setQty(e.target.value)} /></label><label>Sale price<input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} /></label></div><button className="btn" style={{ marginTop: 10 }} onClick={addItem}>Add item</button><div className="kpi" style={{ marginTop: 12 }}><div className="pill"><span>Total qty</span><strong>{totals.items}</strong></div><div className="pill"><span>Total value</span><strong>{currency(totals.value)}</strong></div></div></> : <p className="muted">Create/select a bag to manage items.</p>}</div></div>
   </Card>
 }
 
@@ -184,13 +184,17 @@ function ScannerTab() {
   const [ocrText, setOcrText] = useState('')
   const [ocrStatus, setOcrStatus] = useState('')
   const [aiApiKey, setAiApiKey] = useState(() => localStorage.getItem('rng_ai_key') || '')
-  const [aiModel, setAiModel] = useState(() => localStorage.getItem('rng_ai_model') || 'openai/gpt-4o-mini')
+  const [aiPrimaryModel, setAiPrimaryModel] = useState(() => localStorage.getItem('rng_ai_model_primary') || 'openai/gpt-4o-mini')
+  const [aiFallbackModel, setAiFallbackModel] = useState(() => localStorage.getItem('rng_ai_model_fallback') || 'openai/gpt-4o')
+  const [aiThreshold, setAiThreshold] = useState(() => Number(localStorage.getItem('rng_ai_threshold') || 85))
   const [aiStatus, setAiStatus] = useState('')
   const [aiResult, setAiResult] = useState(null)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
-  useEffect(() => { localStorage.setItem('rng_ai_model', aiModel) }, [aiModel])
+  useEffect(() => { localStorage.setItem('rng_ai_model_primary', aiPrimaryModel) }, [aiPrimaryModel])
+  useEffect(() => { localStorage.setItem('rng_ai_model_fallback', aiFallbackModel) }, [aiFallbackModel])
+  useEffect(() => { localStorage.setItem('rng_ai_threshold', String(aiThreshold)) }, [aiThreshold])
 
   const buildDb = async (files) => {
     const imageFiles = Array.from(files || []).filter((f) => f.type.startsWith('image/'))
@@ -246,31 +250,56 @@ function ScannerTab() {
     return scored[0]?.verifyScore > 0 ? scored[0] : null
   }
 
+  const callVisionModel = async (model, imageDataUrl) => {
+    const prompt = 'Identify this Pokemon trading card. Return ONLY valid JSON with keys: card_name, set_name, card_number, rarity, confidence (0-100), alternatives (array of up to 3 strings), reasoning_short.'
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
+      }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json()
+    const text = json?.choices?.[0]?.message?.content || ''
+    const parsed = safeJsonParse(text)
+    if (!parsed) throw new Error('Model did not return parseable JSON')
+    return parsed
+  }
+
   const runAiIdentify = async (file) => {
     if (!file) return setAiStatus('Pick a card image first.')
     if (!aiApiKey) return setAiStatus('Add API key first.')
-    setAiStatus('AI identify running...')
+    setAiStatus('AI identify running (primary model)...')
     setAiResult(null)
     try {
       const imageDataUrl = await fileToDataUrl(file)
-      const prompt = `Identify this trading card. Return ONLY valid JSON with keys: card_name, set_name, card_number, rarity, confidence (0-100), alternatives (array of up to 3 strings), reasoning_short.`
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
-        body: JSON.stringify({
-          model: aiModel,
-          temperature: 0.1,
-          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
-        }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
-      const text = json?.choices?.[0]?.message?.content || ''
-      const parsed = safeJsonParse(text)
-      if (!parsed) throw new Error('Model did not return parseable JSON')
-      const verified = verifyAgainstDb(parsed)
-      setAiResult({ ...parsed, verifiedMatch: verified || null })
-      setAiStatus('AI identify complete.')
+      const primary = await callVisionModel(aiPrimaryModel, imageDataUrl)
+      const primaryConfidence = Number(primary?.confidence || 0)
+      const primaryVerified = verifyAgainstDb(primary)
+
+      let finalResult = { ...primary, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false }
+      const needsEscalation = primaryConfidence < Number(aiThreshold || 85) || !primaryVerified
+
+      if (needsEscalation) {
+        setAiStatus('Escalating to fallback model...')
+        const fallback = await callVisionModel(aiFallbackModel, imageDataUrl)
+        const fallbackVerified = verifyAgainstDb(fallback)
+        finalResult = {
+          ...fallback,
+          routedModel: aiFallbackModel,
+          verifiedMatch: fallbackVerified || null,
+          escalated: true,
+          primaryCandidate: { ...primary, verified: !!primaryVerified },
+        }
+      }
+
+      setAiResult(finalResult)
+      setAiStatus(
+                  `AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}).`
+      )
     } catch (e) {
       setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
     }
@@ -290,7 +319,7 @@ function ScannerTab() {
         <h3>Database Match Test</h3>
         <label>Query card image<input type="file" accept="image/*" onChange={(e) => runMatch(e.target.files?.[0])} /></label>
         <p className="muted">{matchStatus}</p>
-        <div className="match-results">{results.map((m) => <div key={m.id} className="result-row"><img src={m.previewUrl} alt={m.name} /><div><strong>{m.name}</strong><div className="muted">Confidence {m.confidence}% · d={m.distance}</div></div></div>)}</div>
+        <div className="match-results">{results.map((m) => <div key={m.id} className="result-row"><img src={m.previewUrl} alt={m.name} /><div><strong>{m.name}</strong><div className="muted">Confidence {m.confidence}% ï¿½ d={m.distance}</div></div></div>)}</div>
       </div>
 
       <div className="panel">
@@ -303,14 +332,18 @@ function ScannerTab() {
       <div className="panel">
         <h3>AI Identify (Vision)</h3>
         <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label>
-        <label>Model<input value={aiModel} onChange={(e) => setAiModel(e.target.value)} /></label>
+        <label>Primary model<input value={aiPrimaryModel} onChange={(e) => setAiPrimaryModel(e.target.value)} /></label>
+        <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
+        <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
           <div><strong>{aiResult.card_name || 'Unknown card'}</strong></div>
-          <div className="muted">Set: {aiResult.set_name || '-'} · No: {aiResult.card_number || '-'} · Rarity: {aiResult.rarity || '-'}</div>
+          <div className="muted">Set: {aiResult.set_name || '-'} ï¿½ No: {aiResult.card_number || '-'} ï¿½ Rarity: {aiResult.rarity || '-'}</div>
           <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
+          <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}</div>
+          {aiResult.primaryCandidate ? <div className="muted">Primary candidate: {aiResult.primaryCandidate.card_name || '-'} ({aiResult.primaryCandidate.confidence || '-'}%)</div> : null}
           {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
         </div> : null}
       </div>
@@ -406,3 +439,5 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
