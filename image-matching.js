@@ -9,7 +9,7 @@ const matchBtn = document.getElementById('matchBtn');
 const matchStatus = document.getElementById('matchStatus');
 const resultsEl = document.getElementById('results');
 
-const DB_KEY = 'rng_image_match_db_v2';
+const DB_KEY = 'rng_image_match_db_v3';
 let referenceDb = [];
 
 function saveDb() {
@@ -53,18 +53,132 @@ async function urlToImageBitmap(url) {
   return createImageBitmap(blob);
 }
 
-function averageHashFromBitmap(bitmap, size = 8) {
+function bitmapToCanvas(bitmap) {
   const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  canvas.width = size;
-  canvas.height = size;
-  ctx.drawImage(bitmap, 0, 0, size, size);
+  ctx.drawImage(bitmap, 0, 0);
+  return canvas;
+}
+
+function detectCardCropRect(canvas) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const w = canvas.width;
+  const h = canvas.height;
+  const { data } = ctx.getImageData(0, 0, w, h);
+
+  const step = Math.max(2, Math.floor(Math.min(w, h) / 300));
+  const edgePts = [];
+  const threshold = 55;
+
+  for (let y = step; y < h - step; y += step) {
+    for (let x = step; x < w - step; x += step) {
+      const i = (y * w + x) * 4;
+      const il = (y * w + (x - step)) * 4;
+      const ir = (y * w + (x + step)) * 4;
+      const iu = ((y - step) * w + x) * 4;
+      const id = ((y + step) * w + x) * 4;
+
+      const g = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      const gl = (data[il] + data[il + 1] + data[il + 2]) / 3;
+      const gr = (data[ir] + data[ir + 1] + data[ir + 2]) / 3;
+      const gu = (data[iu] + data[iu + 1] + data[iu + 2]) / 3;
+      const gd = (data[id] + data[id + 1] + data[id + 2]) / 3;
+
+      const gx = Math.abs(gr - gl);
+      const gy = Math.abs(gd - gu);
+      const mag = gx + gy + Math.abs(g - (gl + gr + gu + gd) / 4);
+      if (mag >= threshold) edgePts.push({ x, y });
+    }
+  }
+
+  if (edgePts.length < 200) {
+    // fallback to center crop with card-ish ratio
+    const ratio = 0.715; // pokemon card width/height
+    let cw = Math.floor(w * 0.78);
+    let ch = Math.floor(cw / ratio);
+    if (ch > h * 0.9) {
+      ch = Math.floor(h * 0.9);
+      cw = Math.floor(ch * ratio);
+    }
+    return { x: Math.floor((w - cw) / 2), y: Math.floor((h - ch) / 2), w: cw, h: ch };
+  }
+
+  const xs = edgePts.map((p) => p.x).sort((a, b) => a - b);
+  const ys = edgePts.map((p) => p.y).sort((a, b) => a - b);
+
+  const q = (arr, pct) => arr[Math.max(0, Math.min(arr.length - 1, Math.floor(arr.length * pct)))];
+  let x1 = q(xs, 0.08);
+  let x2 = q(xs, 0.92);
+  let y1 = q(ys, 0.08);
+  let y2 = q(ys, 0.92);
+
+  // normalize to card ratio
+  const targetRatio = 0.715;
+  let cw = Math.max(20, x2 - x1);
+  let ch = Math.max(20, y2 - y1);
+  const cx = Math.floor((x1 + x2) / 2);
+  const cy = Math.floor((y1 + y2) / 2);
+  const ratio = cw / ch;
+
+  if (ratio > targetRatio) cw = Math.floor(ch * targetRatio);
+  else ch = Math.floor(cw / targetRatio);
+
+  x1 = Math.max(0, Math.floor(cx - cw / 2));
+  y1 = Math.max(0, Math.floor(cy - ch / 2));
+  if (x1 + cw > w) x1 = w - cw;
+  if (y1 + ch > h) y1 = h - ch;
+
+  return { x: x1, y: y1, w: cw, h: ch };
+}
+
+function averageHashFromCanvas(canvas, size = 8) {
+  const hashCanvas = document.createElement('canvas');
+  const ctx = hashCanvas.getContext('2d', { willReadFrequently: true });
+  hashCanvas.width = size;
+  hashCanvas.height = size;
+  ctx.drawImage(canvas, 0, 0, size, size);
 
   const { data } = ctx.getImageData(0, 0, size, size);
   const gray = [];
   for (let i = 0; i < data.length; i += 4) gray.push(Math.round((data[i] + data[i + 1] + data[i + 2]) / 3));
   const avg = gray.reduce((a, b) => a + b, 0) / gray.length;
   return gray.map((g) => (g >= avg ? '1' : '0')).join('');
+}
+
+function computeMultiHashesFromBitmap(bitmap) {
+  const full = bitmapToCanvas(bitmap);
+  const cropRect = detectCardCropRect(full);
+
+  const crop = document.createElement('canvas');
+  crop.width = cropRect.w;
+  crop.height = cropRect.h;
+  const cropCtx = crop.getContext('2d', { willReadFrequently: true });
+  cropCtx.drawImage(full, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h);
+
+  // central tighter crop for robustness
+  const inner = document.createElement('canvas');
+  const iw = Math.floor(crop.width * 0.82);
+  const ih = Math.floor(crop.height * 0.82);
+  inner.width = iw;
+  inner.height = ih;
+  const ix = Math.floor((crop.width - iw) / 2);
+  const iy = Math.floor((crop.height - ih) / 2);
+  inner.getContext('2d', { willReadFrequently: true }).drawImage(crop, ix, iy, iw, ih, 0, 0, iw, ih);
+
+  return {
+    fullHash: averageHashFromCanvas(full),
+    cropHash: averageHashFromCanvas(crop),
+    innerHash: averageHashFromCanvas(inner),
+  };
+}
+
+function blendedDistance(query, ref) {
+  const d1 = hammingDistance(query.fullHash, ref.fullHash || ref.hash || query.fullHash);
+  const d2 = hammingDistance(query.cropHash, ref.cropHash || ref.hash || query.cropHash);
+  const d3 = hammingDistance(query.innerHash, ref.innerHash || ref.cropHash || ref.hash || query.innerHash);
+  return Math.round(d1 * 0.2 + d2 * 0.5 + d3 * 0.3);
 }
 
 async function buildReferenceDb(files) {
@@ -81,9 +195,9 @@ async function buildReferenceDb(files) {
     const file = imageFiles[i];
     try {
       const bitmap = await fileToImageBitmap(file);
-      const hash = averageHashFromBitmap(bitmap);
+      const hashes = computeMultiHashesFromBitmap(bitmap);
       const previewUrl = URL.createObjectURL(file);
-      nextDb.push({ id: `${file.name}-${i}`, name: file.webkitRelativePath || file.name, hash, previewUrl });
+      nextDb.push({ id: `${file.name}-${i}`, name: file.webkitRelativePath || file.name, previewUrl, ...hashes });
       dbStatus.textContent = `Building DB... ${i + 1}/${imageFiles.length}`;
     } catch (err) {
       console.warn('Failed to hash image', file.name, err);
@@ -104,32 +218,42 @@ async function buildFromPokemonManifest() {
   }
 
   const cards = await res.json();
-  dbStatus.textContent = `Hashing ${cards.length} Pokemon card images... (first run may take a while)`;
+  dbStatus.textContent = `Hashing ${cards.length} Pokemon card images... (phase 2 crop-aware hashing)`;
   const nextDb = [];
 
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i];
-    const src = c.localImage ? `./data/pokemon/${c.localImage}` : c.imageUrl;
-    if (!src) continue;
-    try {
-      const bitmap = await urlToImageBitmap(src);
-      const hash = averageHashFromBitmap(bitmap);
+    const localSrc = c.localImage ? `./data/pokemon/${c.localImage}` : '';
+    const remoteSrc = c.imageUrl || '';
+    const candidates = [localSrc, remoteSrc].filter(Boolean);
+
+    let bitmap = null;
+    let usedSrc = '';
+    for (const src of candidates) {
+      try {
+        bitmap = await urlToImageBitmap(src);
+        usedSrc = src;
+        break;
+      } catch {}
+    }
+
+    if (bitmap) {
+      const hashes = computeMultiHashesFromBitmap(bitmap);
       nextDb.push({
         id: c.id,
         name: `${c.name} (${c.setName} #${c.number})`,
-        hash,
-        previewUrl: src,
+        previewUrl: usedSrc,
         meta: c,
+        ...hashes,
       });
-    } catch (err) {
-      // Skip failed image pulls
     }
+
     if ((i + 1) % 100 === 0) dbStatus.textContent = `Hashing Pokemon images... ${i + 1}/${cards.length}`;
   }
 
   referenceDb = nextDb;
   saveDb();
-  dbStatus.textContent = `Pokemon DB ready. Indexed ${referenceDb.length} images.`;
+  dbStatus.textContent = `Pokemon DB ready (phase 2). Indexed ${referenceDb.length} images.`;
 }
 
 function scoreClass(confidence) {
@@ -169,13 +293,13 @@ async function runMatch(file) {
     return;
   }
 
-  matchStatus.textContent = 'Matching...';
+  matchStatus.textContent = 'Matching (phase 2 crop-aware)...';
   const bitmap = await fileToImageBitmap(file);
-  const queryHash = averageHashFromBitmap(bitmap);
+  const query = computeMultiHashesFromBitmap(bitmap);
 
   const matches = referenceDb
     .map((ref) => {
-      const distance = hammingDistance(queryHash, ref.hash);
+      const distance = blendedDistance(query, ref);
       return { ...ref, distance, confidence: confidenceFromDistance(distance) };
     })
     .sort((a, b) => a.distance - b.distance)
@@ -209,4 +333,3 @@ matchBtn.addEventListener('click', async () => {
 });
 
 loadDb();
-
