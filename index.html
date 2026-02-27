@@ -19,10 +19,10 @@
         </div>
       </header>
 
-      <nav class="top-nav top-nav-4" aria-label="Module navigation">
+      <nav class="top-nav top-nav-3" aria-label="Module navigation">
         <button id="navSingles" class="nav-btn active" data-module="singles">Singles Calculator</button>
         <button id="navPurchase" class="nav-btn" data-module="purchase">Purchase Calculator</button>
-        <button id="navBags" class="nav-btn" data-module="bags">Bag Builder <span class="pro-pill">PRO</span></button>`n        <button id="navScanner" class="nav-btn" data-module="scanner">Scanner Lab</button>
+        <button id="navBags" class="nav-btn" data-module="bags">Bag Builder <span class="pro-pill">PRO</span></button>
       </nav>
 
       <section id="singlesModule" class="module module-active">
@@ -275,18 +275,6 @@
 
       <footer class="footer">Built for Whatnot TCG single streams. Prices shown in CAD.</footer>
       <div class="toast" id="toast"></div>
-    
-      <section id="scannerModule" class="module" hidden>
-        <section class="card">
-          <h2>Scanner Test Lab</h2>
-          <p class="muted-copy">Run the full image matching pipeline directly inside the app. This includes debug stage previews and Pokemon DB loading.</p>
-          <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
-            <a class="btn secondary" href="./image-matching.html" target="_blank" rel="noopener">Open in New Tab</a>
-            <p class="muted-copy" style="margin:8px 0 0;">Tip: Use this embedded tester for workflow; external tab is only for troubleshooting.</p>
-          </div>
-          <iframe src="./image-matching.html" title="Scanner test lab" style="margin-top:12px;width:100%;height:75vh;border:1px solid #334155;border-radius:10px;background:#0b1220;"></iframe>
-        </section>
-      </section>
     </main>
 
     <script src="bagBuilderCore.js"></script>
@@ -295,4 +283,3 @@
     <script src="app.js"></script>
   </body>
 </html>
-

@@ -87,5 +87,3 @@ input { width: 100%; border: none; outline: none; background: transparent; color
 @media (max-width: 740px) {
   .two-col, .three-col, .results { grid-template-columns: 1fr; }
 }
-
-.top-nav-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }

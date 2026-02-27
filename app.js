@@ -28,11 +28,9 @@
     navSingles: document.getElementById('navSingles'),
     navPurchase: document.getElementById('navPurchase'),
     navBags: document.getElementById('navBags'),
-    navScanner: document.getElementById('navScanner'),
     singlesModule: document.getElementById('singlesModule'),
     purchaseModule: document.getElementById('purchaseModule'),
     bagsModule: document.getElementById('bagsModule'),
-    scannerModule: document.getElementById('scannerModule'),
     bagUpsell: document.getElementById('bagUpsell'),
     bagApp: document.getElementById('bagApp'),
     createBagBtn: document.getElementById('createBagBtn'),
@@ -96,7 +94,7 @@
     const moduleParam = params.get('module');
     const bagParam = params.get('bag');
 
-    if (moduleParam === 'bags' || moduleParam === 'purchase' || moduleParam === 'singles' || moduleParam === 'scanner') {
+    if (moduleParam === 'bags' || moduleParam === 'purchase' || moduleParam === 'singles') {
       activeModule = moduleParam;
     }
 
@@ -450,15 +448,12 @@
     const showSingles = module === 'singles';
     const showPurchase = module === 'purchase';
     const showBags = module === 'bags';
-    const showScanner = module === 'scanner';
     els.singlesModule.hidden = !showSingles;
     els.purchaseModule.hidden = !showPurchase;
     els.bagsModule.hidden = !showBags;
-    if (els.scannerModule) els.scannerModule.hidden = !showScanner;
     els.navSingles.classList.toggle('active', showSingles);
     els.navPurchase.classList.toggle('active', showPurchase);
     els.navBags.classList.toggle('active', showBags);
-    if (els.navScanner) els.navScanner.classList.toggle('active', showScanner);
 
     if (showPurchase) renderPurchase();
     if (showBags) {
@@ -818,7 +813,6 @@
     els.navSingles.addEventListener('click', () => setActiveModule('singles'));
     els.navPurchase.addEventListener('click', () => setActiveModule('purchase'));
     els.navBags.addEventListener('click', () => setActiveModule('bags'));
-    if (els.navScanner) els.navScanner.addEventListener('click', () => setActiveModule('scanner'));
     els.pcParseBtn.addEventListener('click', parsePurchaseRows);
     els.pcExportBtn.addEventListener('click', exportPurchaseCsv);
     [els.pcPlatformFee, els.pcProcessingFee, els.pcUnderperform, els.pcTargetProfit, els.pcOfferPrice].forEach((el) => {
@@ -841,4 +835,3 @@
   setActiveModule(activeModule);
   if (activeModule === 'singles') els.cardCost.focus();
 })();
-
