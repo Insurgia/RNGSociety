@@ -270,6 +270,16 @@ function BagBuilderTab() {
 
 export default function App() {
   const [tab, setTab] = useState('singles')
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('rng-theme')
+    return saved === 'light' ? 'light' : 'dark'
+  })
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light')
+    localStorage.setItem('rng-theme', theme)
+  }, [theme])
+
   const tabs = [
     { id: 'singles', label: 'Singles Calculator' },
     { id: 'purchase', label: 'Purchase Calculator' },
@@ -284,6 +294,9 @@ export default function App() {
           <div className="eyebrow">RNG Society</div>
           <h1>Toolkit</h1>
         </div>
+        <button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+          {theme === 'dark' ? '?? Light mode' : '?? Dark mode'}
+        </button>
       </header>
 
       <nav className="tabs">
