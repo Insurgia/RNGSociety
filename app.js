@@ -811,6 +811,15 @@
     showToast('Bags CSV exported');
   }
 
+  
+  function wireGlobalNav() {
+    document.querySelectorAll('.top-nav .nav-btn[data-module]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mod = btn.getAttribute('data-module');
+        if (mod) setActiveModule(mod);
+      });
+    });
+  }
   function initBagBuilder() {
     seedProAccessIfMissing();
     bagDb = loadBagDb();
@@ -841,4 +850,5 @@
   setActiveModule(activeModule);
   if (activeModule === 'singles') els.cardCost.focus();
 })();
+
 
