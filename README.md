@@ -27,3 +27,16 @@ Then open `http://localhost:4173`.
 - detailed expandable cost breakdown (commission, processing, total fees, net earnings, profit)
 - copy-to-clipboard listing snippet
 - localStorage persistence for last-used values
+
+
+### Image Matcher Lab (new)
+
+A standalone in-browser image matching prototype is available at:
+- /image-matching.html
+
+Use it to:
+1. Build a local reference DB from a folder of images
+2. Upload/capture a query image
+3. See top visual matches by perceptual hash distance
+
+No OCR required for this flow.

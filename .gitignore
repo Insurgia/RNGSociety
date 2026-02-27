@@ -7,7 +7,7 @@ ui/node_modules/
 ui/.vite/
 
 dist/
-ui/dist/
+
 
 # Logs
 npm-debug.log*
