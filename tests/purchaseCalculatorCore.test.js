@@ -15,6 +15,8 @@ test('tier assignment protects bangers', () => {
   assert.equal(tier, 'Fixed Price');
 });
 
+//key=glpat-jOE_YQmEmCa4jolXMxO_um86MQp1Omt0MWFzCw.01.121umjczr
+
 test('maxOffer calculation follows risk-adjusted target', () => {
   const settings = PCore.normalizeSettings({ targetProfitPercent: 25, underperformRatePercent: 10, platformFeePercent: 10, paymentProcessingPercent: 0 });
   const result = PCore.aggregateResults([{ cardName: 'X', qty: 1, marketValue: 100 }], settings);
