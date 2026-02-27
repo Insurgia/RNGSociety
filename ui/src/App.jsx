@@ -4,14 +4,14 @@ const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
 const round2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100
 const ceilQuarter = (n) => Math.ceil(Number(n || 0) * 4) / 4
+const DB_KEY = 'rng_scanner_db_v1'
 
 const LAB_SEED_TOOLS = [
   { id: 'singles-core', name: 'Singles Calculator', status: 'stable', category: 'Core', summary: 'Production calculator for single-card pricing.', tags: ['calculator', 'core'], testTarget: 'singles' },
   { id: 'purchase-core', name: 'Purchase Calculator', status: 'stable', category: 'Core', summary: 'Production lot-buying calculator.', tags: ['calculator', 'core'], testTarget: 'purchase' },
   { id: 'bags-core', name: 'Bag Builder', status: 'stable', category: 'Core', summary: 'Production bag tracking tool.', tags: ['core', 'workflow'], testTarget: 'bags' },
-  { id: 'scanner-core', name: 'Scanner Core', status: 'wip', category: 'Scanner', summary: 'Card scan ingestion + normalization pipeline.', tags: ['ocr', 'pipeline', 'scanner'] },
-  { id: 'scanner-lab', name: 'Scanner Lab', status: 'wip', category: 'Scanner', summary: 'Experimental scan models, confidence tuning, edge-case QA.', tags: ['experiments', 'qa', 'vision'] },
-  { id: 'pricing-rules', name: 'Pricing Rules Sandbox', status: 'planned', category: 'Pricing', summary: 'Prototype pricing curves and fee logic before promotion.', tags: ['pricing', 'simulation'] },
+  { id: 'scanner-core', name: 'Scanner Core', status: 'wip', category: 'Scanner', summary: 'OCR + image matching scanner stack.', tags: ['ocr', 'matching', 'scanner'], testTarget: 'scanner' },
+  { id: 'scanner-lab', name: 'Scanner Lab', status: 'wip', category: 'Scanner', summary: 'Experimental scanner tuning and edge-case QA.', tags: ['scanner', 'experiments'], testTarget: 'scanner' },
 ]
 
 function Card({ title, description, children }) {
@@ -37,12 +37,11 @@ function SinglesTab() {
     const commission = Math.min(100, Math.max(0, Number(commissionPct) || 0))
     const processing = Math.min(100, Math.max(0, Number(processingPct) || 0))
     const fixed = Math.max(0, Number(processingFixed) || 0)
-    const buffer = Math.max(0, Number(bufferPct) || 0) / 100
     const perCardShip = round2(ship / cards)
     const hardCost = round2(card + freebie + perCardShip)
     const denominator = 1 - (commission + processing) / 100
     const breakEven = denominator > 0 ? (hardCost + fixed) / denominator : hardCost
-    const recommended = ceilQuarter(breakEven * (1 + buffer))
+    const recommended = ceilQuarter(breakEven * (1 + Math.max(0, Number(bufferPct) || 0) / 100))
     const commissionFee = recommended * (commission / 100)
     const processingFee = recommended * (processing / 100) + fixed
     const totalFees = commissionFee + processingFee
@@ -53,8 +52,8 @@ function SinglesTab() {
 
   return <Card title="Singles Calculator" description="Pricing + fee-aware profitability for live selling.">
     <div className="grid three">
-      <label>Card cost<input value={cardCost} onChange={(e) => setCardCost(e.target.value)} placeholder="0.00" /></label>
-      <label>Freebie cost<input value={freebieCost} onChange={(e) => setFreebieCost(e.target.value)} placeholder="0.00" /></label>
+      <label>Card cost<input value={cardCost} onChange={(e) => setCardCost(e.target.value)} /></label>
+      <label>Freebie cost<input value={freebieCost} onChange={(e) => setFreebieCost(e.target.value)} /></label>
       <label>Order shipping<input value={shipFee} onChange={(e) => setShipFee(e.target.value)} /></label>
       <label>Cards per order<input value={cardsPerOrder} onChange={(e) => setCardsPerOrder(e.target.value)} /></label>
       <label>Commission %<input value={commissionPct} onChange={(e) => setCommissionPct(e.target.value)} /></label>
@@ -69,11 +68,10 @@ function SinglesTab() {
 }
 
 function parseBulkPaste(text) {
-  return String(text || '').split(/\n+/).map((l) => l.trim()).filter(Boolean).map((line) => {
+  return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => {
     const parts = line.split('-').map((x) => x.trim())
     if (parts.length >= 3) return { cardName: parts[0], qty: Number.parseInt(parts[1].replace(/[^0-9]/g, ''), 10) || 1, marketValue: Number(parts[2].replace(/[^0-9.]/g, '')) || 0 }
-    const fallback = Number(line.match(/\$?([0-9]+(?:\.[0-9]+)?)/)?.[1] || 0)
-    return { cardName: line, qty: 1, marketValue: fallback }
+    return { cardName: line, qty: 1, marketValue: Number(line.match(/\$?([0-9]+(?:\.[0-9]+)?)/)?.[1] || 0) }
   })
 }
 
@@ -84,6 +82,7 @@ function PurchaseTab() {
   const [targetProfit, setTargetProfit] = useState('25')
   const [bulk, setBulk] = useState('Pikachu - 2 - 8.50\nCharizard - 1 - 120')
   const rows = useMemo(() => parseBulkPaste(bulk), [bulk])
+
   const summary = useMemo(() => {
     const pf = Number(platformFee) / 100
     const pr = Number(processingFee) / 100
@@ -93,9 +92,9 @@ function PurchaseTab() {
       const market = Number(r.marketValue) || 0
       const qty = Number(r.qty) || 1
       const multiplier = market <= 3 ? 0.9 : market <= 6 ? 0.85 : market <= 12 ? 0.8 : market <= 25 ? 0.75 : market <= 45 ? 0.7 : market <= 75 ? 0.67 : 0.62
-      const riskAdjustedNet = (market * multiplier) * (1 - (pf + pr)) * (1 - under)
+      const riskAdjusted = (market * multiplier) * (1 - (pf + pr)) * (1 - under)
       acc.market += market * qty
-      acc.risk += riskAdjustedNet * qty
+      acc.risk += riskAdjusted * qty
       return acc
     }, { market: 0, risk: 0 })
     return { totals, recommendedOffer: totals.risk * (1 - target) }
@@ -117,13 +116,9 @@ function BagBuilderTab() {
   const [bags, setBags] = useState(() => { try { return JSON.parse(localStorage.getItem('rng-bags-v1') || '[]') } catch { return [] } })
   const [activeId, setActiveId] = useState(null)
   useEffect(() => { localStorage.setItem('rng-bags-v1', JSON.stringify(bags)) }, [bags])
+
   const activeBag = bags.find((b) => b.id === activeId) || null
-  const createBag = () => {
-    if (!username.trim()) return
-    const id = crypto.randomUUID()
-    setBags((prev) => [{ id, bagId: `BAG-${String(prev.length + 1).padStart(5, '0')}`, username: username.trim(), platform, status: 'OPEN', items: [] }, ...prev])
-    setActiveId(id)
-  }
+  const createBag = () => { if (!username.trim()) return; const id = crypto.randomUUID(); setBags((prev) => [{ id, bagId: `BAG-${String(prev.length + 1).padStart(5, '0')}`, username: username.trim(), platform, status: 'OPEN', items: [] }, ...prev]); setActiveId(id) }
   const addItem = () => {
     if (!activeBag || !itemName.trim()) return
     const item = { id: crypto.randomUUID(), name: itemName.trim(), qty: Math.max(1, Number(qty) || 1), salePrice: Math.max(0, Number(salePrice) || 0) }
@@ -138,11 +133,128 @@ function BagBuilderTab() {
   </Card>
 }
 
+function hammingDistance(a, b) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d }
+function confidenceFromDistance(distance, bits = 64) { return Math.round(Math.max(0, 1 - distance / bits) * 100) }
+async function fileToBitmap(file) { return createImageBitmap(file) }
+function bitmapToCanvas(bitmap) { const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height; c.getContext('2d', { willReadFrequently: true }).drawImage(bitmap, 0, 0); return c }
+function averageHashFromCanvas(canvas, size = 8) {
+  const c = document.createElement('canvas'); c.width = size; c.height = size
+  const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(canvas, 0, 0, size, size)
+  const { data } = ctx.getImageData(0, 0, size, size)
+  const gray = []; for (let i = 0; i < data.length; i += 4) gray.push((data[i] + data[i + 1] + data[i + 2]) / 3)
+  const avg = gray.reduce((a, b) => a + b, 0) / gray.length
+  return gray.map((g) => (g >= avg ? '1' : '0')).join('')
+}
+function detectCardCropRect(canvas) {
+  const w = canvas.width, h = canvas.height
+  const ratio = 0.715
+  let cw = Math.floor(w * 0.78), ch = Math.floor(cw / ratio)
+  if (ch > h * 0.9) { ch = Math.floor(h * 0.9); cw = Math.floor(ch * ratio) }
+  return { x: Math.floor((w - cw) / 2), y: Math.floor((h - ch) / 2), w: cw, h: ch }
+}
+function computeHashes(bitmap) {
+  const full = bitmapToCanvas(bitmap)
+  const r = detectCardCropRect(full)
+  const crop = document.createElement('canvas'); crop.width = r.w; crop.height = r.h
+  crop.getContext('2d', { willReadFrequently: true }).drawImage(full, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
+  const inner = document.createElement('canvas'); inner.width = Math.floor(crop.width * 0.82); inner.height = Math.floor(crop.height * 0.82)
+  const ix = Math.floor((crop.width - inner.width) / 2), iy = Math.floor((crop.height - inner.height) / 2)
+  inner.getContext('2d', { willReadFrequently: true }).drawImage(crop, ix, iy, inner.width, inner.height, 0, 0, inner.width, inner.height)
+  return { fullHash: averageHashFromCanvas(full), cropHash: averageHashFromCanvas(crop), innerHash: averageHashFromCanvas(inner) }
+}
+function blendedDistance(q, r) {
+  const d1 = hammingDistance(q.fullHash, r.fullHash || r.hash || q.fullHash)
+  const d2 = hammingDistance(q.cropHash, r.cropHash || r.hash || q.cropHash)
+  const d3 = hammingDistance(q.innerHash, r.innerHash || r.hash || q.innerHash)
+  return Math.round(d1 * 0.2 + d2 * 0.5 + d3 * 0.3)
+}
+
+function ScannerTab() {
+  const [referenceDb, setReferenceDb] = useState(() => { try { return JSON.parse(localStorage.getItem(DB_KEY) || '[]') } catch { return [] } })
+  const [dbStatus, setDbStatus] = useState('Ready.')
+  const [matchStatus, setMatchStatus] = useState('')
+  const [results, setResults] = useState([])
+  const [ocrText, setOcrText] = useState('')
+  const [ocrStatus, setOcrStatus] = useState('')
+
+  useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
+
+  const buildDb = async (files) => {
+    const imageFiles = Array.from(files || []).filter((f) => f.type.startsWith('image/'))
+    if (!imageFiles.length) return setDbStatus('No images selected.')
+    setDbStatus(`Building DB from ${imageFiles.length} images...`)
+    const next = []
+    for (let i = 0; i < imageFiles.length; i++) {
+      const f = imageFiles[i]
+      try {
+        const bitmap = await fileToBitmap(f)
+        next.push({ id: `${f.name}-${i}`, name: f.name, previewUrl: URL.createObjectURL(f), ...computeHashes(bitmap) })
+      } catch {}
+      setDbStatus(`Building DB... ${i + 1}/${imageFiles.length}`)
+    }
+    setReferenceDb(next)
+    setDbStatus(`DB ready (${next.length} cards indexed).`)
+  }
+
+  const runMatch = async (file) => {
+    if (!file) return setMatchStatus('Pick a query image first.')
+    if (!referenceDb.length) return setMatchStatus('Build DB first.')
+    setMatchStatus('Matching...')
+    const query = computeHashes(await fileToBitmap(file))
+    const top = referenceDb.map((ref) => {
+      const distance = blendedDistance(query, ref)
+      return { ...ref, distance, confidence: confidenceFromDistance(distance) }
+    }).sort((a, b) => a.distance - b.distance).slice(0, 8)
+    setResults(top)
+    setMatchStatus(`Done. Top ${top.length} matches.`)
+  }
+
+  const runOcr = async (file) => {
+    if (!file) return setOcrStatus('Pick an image for OCR first.')
+    setOcrStatus('OCR running...')
+    try {
+      const { recognize } = await import('tesseract.js')
+      const out = await recognize(file, 'eng')
+      setOcrText(out?.data?.text?.trim() || '')
+      setOcrStatus('OCR complete.')
+    } catch (e) {
+      setOcrStatus('OCR failed. Check console/network and retry.')
+    }
+  }
+
+  return <Card title="Scanner Core" description="OCR scanner + database image matching in one lab module.">
+    <div className="scanner-grid">
+      <div className="panel">
+        <h3>Reference DB</h3>
+        <label>Upload card image folder<input type="file" multiple accept="image/*" onChange={(e) => buildDb(e.target.files)} /></label>
+        <div className="action-row"><button className="btn" onClick={() => { setReferenceDb([]); setDbStatus('Reference DB cleared.') }}>Clear DB</button></div>
+        <p className="muted">{dbStatus}</p>
+        <p className="muted">Indexed cards: {referenceDb.length}</p>
+      </div>
+
+      <div className="panel">
+        <h3>Database Match Test</h3>
+        <label>Query card image<input type="file" accept="image/*" onChange={(e) => runMatch(e.target.files?.[0])} /></label>
+        <p className="muted">{matchStatus}</p>
+        <div className="match-results">{results.map((m) => <div key={m.id} className="result-row"><img src={m.previewUrl} alt={m.name} /><div><strong>{m.name}</strong><div className="muted">Confidence {m.confidence}% · d={m.distance}</div></div></div>)}</div>
+      </div>
+
+      <div className="panel">
+        <h3>OCR Test</h3>
+        <label>Card image for OCR<input type="file" accept="image/*" onChange={(e) => runOcr(e.target.files?.[0])} /></label>
+        <p className="muted">{ocrStatus}</p>
+        <textarea rows={8} value={ocrText} onChange={(e) => setOcrText(e.target.value)} placeholder="OCR output appears here..." />
+      </div>
+    </div>
+  </Card>
+}
+
 function ToolPreview({ target }) {
   if (target === 'singles') return <SinglesTab />
   if (target === 'purchase') return <PurchaseTab />
   if (target === 'bags') return <BagBuilderTab />
-  return <Card title="Test Bench" description="No in-app preview mapped yet."><p className="muted">This module does not have a runnable preview yet.</p></Card>
+  if (target === 'scanner') return <ScannerTab />
+  return <Card title="Test Bench" description="No in-app preview mapped yet."><p className="muted">This module has no preview yet.</p></Card>
 }
 
 function LabEnvironment({ onLaunchTool }) {
@@ -159,11 +271,7 @@ function LabEnvironment({ onLaunchTool }) {
 
   const allTools = useMemo(() => [...LAB_SEED_TOOLS, ...customTools].map((t) => ({ ...t, status: statusOverrides[t.id] || t.status })), [customTools, statusOverrides])
   const filtered = useMemo(() => allTools.filter((tool) => (statusFilter === 'all' || tool.status === statusFilter) && (!query.trim() || `${tool.name} ${tool.summary} ${tool.category} ${(tool.tags || []).join(' ')}`.toLowerCase().includes(query.toLowerCase()))), [allTools, query, statusFilter])
-
-  useEffect(() => {
-    if (!activeToolId && filtered.length) setActiveToolId(filtered[0].id)
-    if (activeToolId && !allTools.find((t) => t.id === activeToolId) && filtered.length) setActiveToolId(filtered[0].id)
-  }, [filtered, allTools, activeToolId])
+  useEffect(() => { if (!activeToolId && filtered.length) setActiveToolId(filtered[0].id); if (activeToolId && !allTools.find((t) => t.id === activeToolId) && filtered.length) setActiveToolId(filtered[0].id) }, [filtered, allTools, activeToolId])
 
   const active = allTools.find((t) => t.id === activeToolId) || null
   const stableTools = allTools.filter((t) => t.status === 'stable')
@@ -171,7 +279,6 @@ function LabEnvironment({ onLaunchTool }) {
   const [note, setNote] = useState('')
   useEffect(() => { setNote(noteKey ? localStorage.getItem(noteKey) || '' : '') }, [noteKey])
   const persistNote = (text) => { setNote(text); if (noteKey) localStorage.setItem(noteKey, text) }
-
   const addDraft = () => {
     if (!draft.name.trim()) return
     setCustomTools((prev) => [{ id: `custom-${crypto.randomUUID()}`, name: draft.name.trim(), summary: draft.summary.trim() || 'WIP tool module.', category: draft.category.trim() || 'General', status: 'wip', tags: ['custom', 'wip'] }, ...prev])
@@ -179,7 +286,7 @@ function LabEnvironment({ onLaunchTool }) {
   }
   const setStatus = (id, status) => setStatusOverrides((prev) => ({ ...prev, [id]: status }))
 
-  return <Card title="RNG Lab" description="Integrated WIP environment for current and future tools.">
+  return <Card title="RNG Lab" description="WIP environment + promotion pipeline for all tools.">
     <div className="lab-shell">
       <aside className="panel lab-sidebar">
         <div className="grid" style={{ gap: 8 }}><input placeholder="Search lab tools..." value={query} onChange={(e) => setQuery(e.target.value)} /><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">All statuses</option><option value="planned">Planned</option><option value="wip">WIP</option><option value="review">Review</option><option value="stable">Stable</option></select></div>
@@ -187,10 +294,8 @@ function LabEnvironment({ onLaunchTool }) {
       </aside>
 
       <section className="panel lab-main">
-        {active ? <>
-          <div className="lab-head"><h3>{active.name}</h3><span className={`status-pill ${active.status}`}>{active.status.toUpperCase()}</span></div>
-          <p className="muted">{active.summary}</p>
-          <div className="chip-row">{(active.tags || []).map((tag) => <span key={tag} className="chip">{tag}</span>)}</div>
+        {active ? <><div className="lab-head"><h3>{active.name}</h3><span className={`status-pill ${active.status}`}>{active.status.toUpperCase()}</span></div>
+          <p className="muted">{active.summary}</p><div className="chip-row">{(active.tags || []).map((tag) => <span key={tag} className="chip">{tag}</span>)}</div>
           <div className="action-row">
             {active.status === 'planned' ? <button className="btn" onClick={() => setStatus(active.id, 'wip')}>Start WIP</button> : null}
             {active.status === 'wip' ? <button className="btn" onClick={() => setStatus(active.id, 'review')}>Send to Review</button> : null}
@@ -198,16 +303,15 @@ function LabEnvironment({ onLaunchTool }) {
             {active.testTarget ? <button className="btn" onClick={() => setBenchTarget(active.testTarget)}>Open Test View</button> : null}
             {active.testTarget ? <button className="btn" onClick={() => onLaunchTool(active.testTarget)}>Open Full App</button> : null}
           </div>
-          <label style={{ marginTop: 10 }}>Lab notes / spec<textarea rows={6} value={note} onChange={(e) => persistNote(e.target.value)} placeholder="Use this as the persistent WIP notebook for this module." /></label>
+          <label style={{ marginTop: 10 }}>Lab notes / spec<textarea rows={6} value={note} onChange={(e) => persistNote(e.target.value)} /></label>
         </> : <p className="muted">Select a lab tool.</p>}
 
         <div className="lab-create"><h4>Add future WIP tool</h4><div className="grid three"><label>Name<input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></label><label>Category<input value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))} /></label><label style={{ alignSelf: 'end' }}><button className="btn" onClick={addDraft}>Add to Lab</button></label></div><label style={{ marginTop: 8 }}>Summary<textarea rows={2} value={draft.summary} onChange={(e) => setDraft((d) => ({ ...d, summary: e.target.value }))} /></label></div>
-
         <div className="lab-create"><h4>Production catalog ({stableTools.length})</h4><div className="chip-row">{stableTools.map((t) => <button key={t.id} className="btn btn-sm" onClick={() => t.testTarget && onLaunchTool(t.testTarget)}>{t.name}</button>)}</div></div>
       </section>
     </div>
 
-    {benchTarget ? <div style={{ marginTop: 12 }}><Card title="Lab Test Bench" description="Run and validate tool behavior before/after promotion."><ToolPreview target={benchTarget} /></Card></div> : null}
+    {benchTarget ? <div style={{ marginTop: 12 }}><Card title="Lab Test Bench" description="Run and validate module behavior."><ToolPreview target={benchTarget} /></Card></div> : null}
   </Card>
 }
 
@@ -215,13 +319,21 @@ export default function App() {
   const [tab, setTab] = useState('singles')
   const [theme, setTheme] = useState(() => localStorage.getItem('rng-theme') === 'light' ? 'light' : 'dark')
   useEffect(() => { document.documentElement.classList.toggle('light', theme === 'light'); localStorage.setItem('rng-theme', theme) }, [theme])
-  const tabs = [{ id: 'singles', label: 'Singles' }, { id: 'purchase', label: 'Purchase' }, { id: 'bags', label: 'Bags' }, { id: 'lab', label: 'Lab' }]
+
+  const tabs = [
+    { id: 'singles', label: 'Singles' },
+    { id: 'purchase', label: 'Purchase' },
+    { id: 'bags', label: 'Bags' },
+    { id: 'scanner', label: 'Scanner' },
+    { id: 'lab', label: 'Lab' },
+  ]
 
   return <main className="app"><header className="header"><div className="logo">R</div><div><div className="eyebrow">RNG Society</div><h1>Toolkit</h1></div><button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '?? Light mode' : '?? Dark mode'}</button></header>
-    <nav className="tabs tabs4">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>
+    <nav className="tabs tabs5">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>
     {tab === 'singles' && <SinglesTab />}
     {tab === 'purchase' && <PurchaseTab />}
     {tab === 'bags' && <BagBuilderTab />}
+    {tab === 'scanner' && <ScannerTab />}
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
