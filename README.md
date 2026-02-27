@@ -40,3 +40,15 @@ Use it to:
 3. See top visual matches by perceptual hash distance
 
 No OCR required for this flow.
+
+
+### Dataset Augmentation (Phase 2.5)
+
+To improve real-world camera matching without scraping search engines, generate synthetic angle/lighting variants:
+
+`ash
+python scripts/augment_card_images.py --input data/pokemon/images --output data/pokemon/augmented --per-image 50 --max-images 2000
+`
+
+This creates a folder per card id with many variants (ase.jpg, ug_*.jpg).
+
