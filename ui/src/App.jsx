@@ -215,7 +215,7 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
   useEffect(() => {
-    fetch('/pokemon-catalog.json').then((r)=>r.json()).then((j)=>setCatalog(Array.isArray(j)?j:[])).catch(()=>setCatalog([]))
+    fetch('/pokemon-catalog.json?v=2').then((r)=>r.json()).then((j)=>setCatalog(Array.isArray(j)?j:[])).catch(()=>setCatalog([]))
   }, [])
 
 
@@ -852,6 +852,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
