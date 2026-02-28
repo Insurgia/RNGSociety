@@ -364,38 +364,45 @@ function ScannerTab() {
   const autoResolveSetNumber = (ai) => {
     const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
     const rawNumber = extractSetNumber(ai.card_number)
-    const source = [...referenceDb.map((r)=>({ name:r.name, number: extractSetNumber(r.name), language: languageMode === 'japanese' ? 'Japanese' : 'English' })), ...catalog]
+
+    const source = [
+      ...referenceDb.map((r) => ({ name: r.name, number: extractSetNumber(r.name), language: languageMode === 'japanese' ? 'Japanese' : 'English' })),
+      ...catalog.map((r) => ({ name: r.name, number: r.number || extractSetNumber(r.name), language: r.language || '' })),
+    ]
+
     if (!source.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-catalog' }
 
     const nameNorm = normalizeName(rawName)
     const candidates = source
-      .map((r) => ({
-        name: r.name,
-        nameNorm: normalizeName(r.name),
-        number: extractSetNumber(r.name),
-      }))
+      .map((r) => ({ name: r.name, nameNorm: normalizeName(r.name), number: r.number }))
       .filter((r) => r.number && (r.nameNorm.includes(nameNorm) || nameNorm.includes(r.nameNorm)))
-      .filter((r) => languageMode === 'auto' ? true : normalizeName(r.language).includes(normalizeName(languageMode === 'japanese' ? 'japanese' : 'english')) )
 
     if (!candidates.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match-in-catalog' }
 
     if (rawNumber) {
-      const exact = candidates.find((c) => c.number === rawNumber)
+      const exact = candidates.find((cand) => cand.number === rawNumber)
       if (exact) return { number: rawNumber, verified: true, reason: 'exact' }
 
       const [lhs, rhs] = rawNumber.split('/')
-      const rhsMatches = candidates.filter((c) => c.number.split('/')[1] === rhs)
-      if (rhsMatches.length) {
-        const best = rhsMatches
-          .map((c) => ({ ...c, d: digitDistance(c.number.split('/')[0], lhs) }))
-          .sort((a, b) => a.d - b.d)[0]
-        if (best && best.d <= 1) {
-          return { number: best.number, verified: true, reason: 'autocorrect-one-digit', from: rawNumber }
-        }
+      const lhsPad = String(lhs || '').padStart(3, '0')
+
+      const normalized = candidates.map((cand) => {
+        const baseNum = String(cand.number).includes('/') ? cand.number.split('/')[0] : String(cand.number)
+        const basePad = String(baseNum).padStart(3, '0')
+        const rhsOk = String(cand.number).includes('/') ? (cand.number.split('/')[1] === rhs) : true
+        return { ...cand, baseNum, basePad, rhsOk }
+      })
+
+      const viable = normalized
+        .filter((cand) => cand.rhsOk)
+        .map((cand) => ({ ...cand, d: digitDistance(cand.basePad, lhsPad) }))
+        .sort((a, b) => a.d - b.d)
+
+      if (viable.length && viable[0].d <= 1) {
+        return { number: rhs ? `${viable[0].baseNum}/${rhs}` : viable[0].baseNum, verified: true, reason: 'autocorrect-one-digit', from: rawNumber }
       }
     }
 
-    // fallback to most frequent candidate among name matches
     const top = candidates[0]
     return { number: top?.number || rawNumber, verified: !!top?.number, reason: 'name-fallback', from: rawNumber }
   }
