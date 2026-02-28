@@ -452,6 +452,45 @@ function ScannerTab() {
     const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob)
   })
 
+  const cropSetIdRegion = async (file) => {
+    const bitmap = await createImageBitmap(file)
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0)
+
+    const cw = Math.max(1, Math.round(canvas.width * 0.55))
+    const ch = Math.max(1, Math.round(canvas.height * 0.18))
+    const sx = Math.max(0, Math.round((canvas.width - cw) / 2))
+    const sy = Math.max(0, canvas.height - ch - Math.round(canvas.height * 0.03))
+
+    const out = document.createElement('canvas')
+    out.width = cw
+    out.height = ch
+    const octx = out.getContext('2d')
+    octx.drawImage(canvas, sx, sy, cw, ch, 0, 0, cw, ch)
+
+    return await new Promise((resolve) => out.toBlob((b) => resolve(b), 'image/jpeg', 0.9))
+  }
+
+  const callVisionSetId = async (model, imageDataUrl) => {
+    const prompt = 'Read only the card set number from this cropped image. Return ONLY JSON: {"card_number":"###/###","confidence":0-100}'
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + aiApiKey },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
+      }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json()
+    const parsed = safeJsonParse(json?.choices?.[0]?.message?.content || '')
+    return parsed || null
+  }
+
   const getRatePer1K = (model) => {
     const m = String(model || '').toLowerCase()
     if (m.includes('4o-mini')) return { in: 0.00015, out: 0.0006 }
@@ -656,6 +695,16 @@ function ScannerTab() {
         const fallbackVerified = verifyAgainstDb(fallback.parsed)
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
+
+      try {
+        const cropBlob = await cropSetIdRegion(file)
+        const cropDataUrl = await blobToDataUrl(cropBlob)
+        const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl)
+        const cropNum = extractSetNumber(cropRead?.card_number)
+        if (cropNum) {
+          finalResult = { ...finalResult, card_number: cropNum, set_number_crop_confidence: Number(cropRead?.confidence || 0) }
+        }
+      } catch {}
 
       const resolved = await autoResolveSetNumber(finalResult)
       finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
