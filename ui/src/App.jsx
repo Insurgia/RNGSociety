@@ -197,6 +197,7 @@ function ScannerTab() {
   const [telemetryDir, setTelemetryDir] = useState(null)
   const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '')
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
+  const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -206,6 +207,7 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_lang_mode', languageMode) }, [languageMode])
   useEffect(() => { localStorage.setItem('rng_daily_budget_cap', String(dailyBudgetCap)) }, [dailyBudgetCap])
   useEffect(() => { localStorage.setItem('rng_telemetry_webhook', telemetryWebhook) }, [telemetryWebhook])
+  useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -462,6 +464,7 @@ function ScannerTab() {
 
       const compressed = await compressForVision(file)
       const imageDataUrl = await blobToDataUrl(compressed)
+      const compressedB64 = await blobToDataUrl(compressed)
 
       setAiStatus('AI identify running (primary model)...')
       const primary = await callVisionModel(aiPrimaryModel, imageDataUrl)
@@ -480,7 +483,7 @@ function ScannerTab() {
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
 
-      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode }
+      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
       const route = await emitTelemetry('event', historyEntry, 'scanner-events.jsonl')
@@ -546,6 +549,7 @@ function ScannerTab() {
           <button className="btn" onClick={connectTelemetryFolder}>Connect telemetry folder</button>
           <span className="muted">{telemetryStatus}</span>
         </div>
+        <label><input type="checkbox" checked={storeImages} onChange={(e) => setStoreImages(e.target.checked)} /> Store compressed scan images for future training</label>
         <label>Telemetry webhook (mobile fallback)
           <input value={telemetryWebhook} onChange={(e) => setTelemetryWebhook(e.target.value)} placeholder="https://your-endpoint/scanner-ingest" />
         </label>
