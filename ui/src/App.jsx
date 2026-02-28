@@ -364,11 +364,11 @@ function ScannerTab() {
   const autoResolveSetNumber = (ai) => {
     const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
     const rawNumber = extractSetNumber(ai.card_number)
-    const source = referenceDb.length ? referenceDb.map((r)=>({ name:r.name, number: extractSetNumber(r.name), language: languageMode === 'japanese' ? 'Japanese' : 'English' })) : catalog
+    const source = [...referenceDb.map((r)=>({ name:r.name, number: extractSetNumber(r.name), language: languageMode === 'japanese' ? 'Japanese' : 'English' })), ...catalog]
     if (!source.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-catalog' }
 
     const nameNorm = normalizeName(rawName)
-    const candidates = referenceDb
+    const candidates = source
       .map((r) => ({
         name: r.name,
         nameNorm: normalizeName(r.name),
@@ -852,6 +852,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
