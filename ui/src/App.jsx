@@ -343,6 +343,57 @@ function ScannerTab() {
     } catch { setOcrStatus('OCR failed. Check console/network and retry.') }
   }
 
+  const extractSetNumber = (text) => {
+    const m = String(text || '').match(/(\\d{1,3}\/\\d{2,3})/)
+    return m ? m[1] : null
+  }
+
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9?-??-? ]/g, ' ').replace(/s+/g, ' ').trim()
+
+  const digitDistance = (a, b) => {
+    if (!a || !b || a.length !== b.length) return 999
+    let d = 0
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++
+    return d
+  }
+
+  const autoResolveSetNumber = (ai) => {
+    const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
+    const rawNumber = extractSetNumber(ai.card_number)
+    if (!referenceDb.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-db' }
+
+    const nameNorm = normalizeName(rawName)
+    const candidates = referenceDb
+      .map((r) => ({
+        name: r.name,
+        nameNorm: normalizeName(r.name),
+        number: extractSetNumber(r.name),
+      }))
+      .filter((r) => r.number && (r.nameNorm.includes(nameNorm) || nameNorm.includes(r.nameNorm)))
+
+    if (!candidates.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match' }
+
+    if (rawNumber) {
+      const exact = candidates.find((c) => c.number === rawNumber)
+      if (exact) return { number: rawNumber, verified: true, reason: 'exact' }
+
+      const [lhs, rhs] = rawNumber.split('/')
+      const rhsMatches = candidates.filter((c) => c.number.split('/')[1] === rhs)
+      if (rhsMatches.length) {
+        const best = rhsMatches
+          .map((c) => ({ ...c, d: digitDistance(c.number.split('/')[0], lhs) }))
+          .sort((a, b) => a.d - b.d)[0]
+        if (best && best.d <= 1) {
+          return { number: best.number, verified: true, reason: 'autocorrect-one-digit', from: rawNumber }
+        }
+      }
+    }
+
+    // fallback to most frequent candidate among name matches
+    const top = candidates[0]
+    return { number: top?.number || rawNumber, verified: !!top?.number, reason: 'name-fallback', from: rawNumber }
+  }
+
   const verifyAgainstDb = (ai) => {
     if (!ai || !referenceDb.length) return null
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿]/g, '')
@@ -588,12 +639,15 @@ function ScannerTab() {
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
 
-      if (!finalResult.card_number || !String(finalResult.card_number).includes('/')) {
+      const resolved = autoResolveSetNumber(finalResult)
+      finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+
+      if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
         setAiResult(finalResult)
-        setAiStatus('Scan incomplete: missing required set number (e.g. 123/124). Please rescan.')
+        setAiStatus('Scan incomplete: set number could not be auto-verified. Blocked until verified.')
         return
       }
-      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
+      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
       const route = await emitTelemetry('event', historyEntry, 'scanner-events.jsonl')
@@ -681,6 +735,7 @@ function ScannerTab() {
           <div className="muted">Native: {aiResult.card_name_native || '-'} � EN: {aiResult.card_name_english || '-'}</div>
           <div className="muted">Set native: {aiResult.set_name_native || aiResult.set_name || '-'} � Set EN: {aiResult.set_name_english || '-'}</div>
           <div className="muted">No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'} � Detected lang: {aiResult.detected_language || '-'}</div>
+          <div className="muted">Set# verify: {aiResult.set_number_verified ? '? verified' : '? unverified'} ({aiResult.set_number_resolution_reason || 'n/a'}){aiResult.set_number_original ? ` � from ${aiResult.set_number_original}` : ''}</div>
           <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
@@ -791,6 +846,8 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
 
 
 
