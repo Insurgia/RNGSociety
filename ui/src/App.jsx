@@ -234,15 +234,20 @@ function ScannerTab() {
   }
 
   const emitTelemetry = async (kind, payload, fileName) => {
-    if (telemetryDir) {
-      await appendJsonl(fileName, payload)
-      return 'filesystem'
+    try {
+      if (telemetryDir) {
+        await appendJsonl(fileName, payload)
+        return 'filesystem'
+      }
+      if (telemetryWebhook) {
+        await postWebhook(kind, payload)
+        return 'webhook'
+      }
+      return 'none'
+    } catch (err) {
+      setTelemetryStatus(`Telemetry sync failed: ${err?.message || 'unknown error'}`)
+      return 'error'
     }
-    if (telemetryWebhook) {
-      await postWebhook(kind, payload)
-      return 'webhook'
-    }
-    return 'none'
   }
 
   const connectTelemetryFolder = async () => {
@@ -402,7 +407,14 @@ function ScannerTab() {
     setScanHistory((prev) => prev.map((h) => h.hash === aiResult.scanHash ? { ...h, verdict, correctedLabel: correctedLabel || null } : h))
     setAiResult((prev) => prev ? { ...prev, verdict, correctedLabel: correctedLabel || null } : prev)
     const route = await emitTelemetry('feedback', feedback, 'scanner-feedback.jsonl')
-    if (route === 'none') setTelemetryStatus('No telemetry target connected (select folder or webhook).')
+    if (route === 'none') {
+      setTelemetryStatus('No telemetry target connected (select folder or webhook).')
+      window.alert('Feedback NOT saved to telemetry: no target connected.')
+    } else if (route === 'error') {
+      window.alert('Feedback NOT saved to telemetry: sync failed. Check webhook/folder.')
+    } else {
+      window.alert('Feedback saved successfully.')
+    }
     setAiStatus(`Feedback saved: ${verdict}${correctedLabel ? ' (' + correctedLabel + ')' : ''}`)
   }
 
@@ -448,9 +460,11 @@ function ScannerTab() {
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
       const route = await emitTelemetry('event', historyEntry, 'scanner-events.jsonl')
       if (route === 'none') setTelemetryStatus('No telemetry target connected (select folder or webhook).')
+      if (route === 'error') setTelemetryStatus('Telemetry sync failed, but scan result succeeded.')
 
       setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
-      setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: $${historyEntry.estimatedCost}`)
+      const suffix = route === 'error' ? ' (telemetry failed)' : ''
+      setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: ${historyEntry.estimatedCost}${suffix}`)
     } catch (e) {
       if (String(e.message || '').includes('HTTP 402')) setAiStatus('AI identify failed: OpenRouter credits/billing required (402).')
       else if (String(e.message || '').includes('HTTP 429')) setAiStatus('AI identify failed: rate limited (429). Slow down/retry.')
