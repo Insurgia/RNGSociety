@@ -198,7 +198,6 @@ function ScannerTab() {
   const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '')
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
   const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
-  const [catalog, setCatalog] = useState([])
   const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
   const [scrapeStatus, setScrapeStatus] = useState('')
   const [scrapeData, setScrapeData] = useState(null)
@@ -214,9 +213,6 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_telemetry_webhook', telemetryWebhook) }, [telemetryWebhook])
   useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
-  useEffect(() => {
-    fetch('/pokemon-catalog.json?v=2').then((r)=>r.json()).then((j)=>setCatalog(Array.isArray(j)?j:[])).catch(()=>setCatalog([]))
-  }, [])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -361,81 +357,61 @@ function ScannerTab() {
     return d
   }
 
-  const autoResolveSetNumber = (ai) => {
+  const autoResolveSetNumber = async (ai) => {
     const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
     const rawSet = ai.set_name_native || ai.set_name_english || ai.set_name || ''
     const rawNumber = extractSetNumber(ai.card_number)
 
-    // DB-first resolver: canonical catalog is source of truth
-    const source = catalog.map((r) => ({
-      name: r.name || '',
-      setName: r.setName || '',
-      number: r.number || '',
-      language: r.language || '',
-    }))
+    const queryParts = [rawName, rawSet, rawNumber, 'pokemon card']
+      .filter(Boolean)
+      .join(' ')
+    const query = encodeURIComponent(queryParts)
 
-    if (!source.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-catalog' }
+    try {
+      const url = 'https://r.jina.ai/http://pkmncards.com/?s=' + query + '&sort=date&display=images'
+      const text = await fetch(url).then((r) => r.text())
 
-    const nameNorm = normalizeName(rawName)
-    const setNorm = normalizeName(rawSet)
+      const allNums = [...text.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
+      const unique = [...new Set(allNums)]
 
-    const byName = source.filter((r) => {
-      const rn = normalizeName(r.name)
-      return nameNorm && (rn.includes(nameNorm) || nameNorm.includes(rn))
-    })
+      if (!unique.length) {
+        return { number: rawNumber, verified: !!rawNumber, reason: 'live-no-match' }
+      }
 
-    if (!byName.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match-in-catalog' }
+      if (rawNumber && unique.includes(rawNumber)) {
+        return { number: rawNumber, verified: true, reason: 'live-exact' }
+      }
 
-    const byNameAndSet = byName.filter((r) => {
-      if (!setNorm) return true
-      const rs = normalizeName(r.setName)
-      if (!rs) return true
-      return rs.includes(setNorm) || setNorm.includes(rs)
-    })
+      if (rawNumber) {
+        const [lhs, rhs] = rawNumber.split('/')
+        const lhsPad = String(lhs || '').padStart(3, '0')
+        const viable = unique
+          .map((n) => {
+            const parts = n.split('/')
+            const base = parts[0]
+            const den = parts[1]
+            const d = digitDistance(String(base).padStart(3, '0'), lhsPad)
+            const rhsOk = !rhs || den === rhs
+            return { n, d, rhsOk }
+          })
+          .filter((x) => x.rhsOk)
+          .sort((a, b) => a.d - b.d)
 
-    const candidatePool = byNameAndSet.length ? byNameAndSet : byName
-    const uniqueNumbers = [...new Set(candidatePool.map((r) => r.number).filter(Boolean))]
-
-    // If catalog has a single number for this name(+set), trust it outright
-    if (uniqueNumbers.length === 1) {
-      const canonical = uniqueNumbers[0]
-      const resolved = canonical.includes('/')
-        ? canonical
-        : (rawNumber && rawNumber.includes('/') ? `${canonical}/${rawNumber.split('/')[1]}` : canonical)
-      return { number: resolved, verified: true, reason: 'db-first-unique' }
-    }
-
-    if (rawNumber) {
-      const exact = candidatePool.find((cand) => cand.number === rawNumber)
-      if (exact) return { number: rawNumber, verified: true, reason: 'exact' }
-
-      const [lhs, rhs] = rawNumber.split('/')
-      const lhsPad = String(lhs || '').padStart(3, '0')
-
-      const viable = candidatePool
-        .map((cand) => {
-          const base = String(cand.number).split('/')[0]
-          const den = String(cand.number).includes('/') ? String(cand.number).split('/')[1] : rhs
-          const d = digitDistance(String(base).padStart(3, '0'), lhsPad)
-          const rhsOk = !rhs || !den || den === rhs
-          return { ...cand, base, den, d, rhsOk }
-        })
-        .filter((cand) => cand.rhsOk)
-        .sort((a, b) => a.d - b.d)
-
-      if (viable.length && viable[0].d <= 1) {
-        const best = viable[0]
-        return {
-          number: best.den ? `${best.base}/${best.den}` : best.base,
-          verified: true,
-          reason: 'autocorrect-one-digit',
-          from: rawNumber,
+        if (viable.length && viable[0].d <= 1) {
+          return { number: viable[0].n, verified: true, reason: 'live-autocorrect-one-digit', from: rawNumber }
         }
       }
-    }
 
-    return { number: rawNumber, verified: false, reason: 'ambiguous-catalog-match' }
+      if (unique.length === 1) {
+        return { number: unique[0], verified: true, reason: 'live-single-candidate', from: rawNumber || null }
+      }
+
+      return { number: rawNumber, verified: false, reason: 'live-ambiguous' }
+    } catch {
+      return { number: rawNumber, verified: !!rawNumber, reason: 'live-source-unavailable' }
+    }
   }
+
   const verifyAgainstDb = (ai) => {
     if (!ai || !referenceDb.length) return null
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9„ÅÄ-„Éø„êÄ-Èøø]/g, '')
@@ -681,7 +657,7 @@ function ScannerTab() {
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
 
-      const resolved = autoResolveSetNumber(finalResult)
+      const resolved = await autoResolveSetNumber(finalResult)
       finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
 
       if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
@@ -769,7 +745,7 @@ function ScannerTab() {
         <div className="action-row">
           <button className="btn" onClick={validateTelemetryWebhook}>Validate telemetry (real POST)</button>
         </div>
-        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} ∑ Cache entries: ${Object.keys(scanCache).length} ∑ Catalog cards: {catalog.length}</div>
+        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} ∑ Cache entries: ${Object.keys(scanCache).length} ∑ Resolver: live_pkmncards</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
@@ -888,6 +864,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
