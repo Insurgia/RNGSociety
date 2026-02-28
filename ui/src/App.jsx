@@ -740,7 +740,7 @@ function ScannerTab() {
         <div className="action-row">
           <button className="btn" onClick={validateTelemetryWebhook}>Validate telemetry (real POST)</button>
         </div>
-        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} ï¿½ Cache entries: ${Object.keys(scanCache).length}</div>
+        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} · Cache entries: ${Object.keys(scanCache).length} · Catalog cards: {catalog.length}</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
@@ -859,6 +859,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
