@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 23:03 UTC | 503327f3'
+const BUILD_STAMP = 'BUILD 2026-02-28 23:18 UTC | 7e83d6ec'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -711,13 +711,20 @@ function ScannerTab() {
       }
 
       try {
-        finalResult = { ...finalResult, set_number_crop_attempted: true }
+        finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
         const cropBlob = await cropSetIdRegion(file)
         const cropDataUrl = await blobToDataUrl(cropBlob)
         const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl)
-        const cropNum = extractSetNumber(cropRead?.card_number)
+        const cropRaw = String(cropRead?.card_number || '').trim()
+        const cropNum = extractSetNumber(cropRaw)
+        finalResult = {
+          ...finalResult,
+          set_number_crop_raw: cropRaw || null,
+          set_number_crop_confidence: Number(cropRead?.confidence || 0),
+          set_number_crop_image_bytes: Number(cropBlob?.size || 0),
+        }
         if (cropNum) {
-          finalResult = { ...finalResult, card_number: cropNum, set_number_crop_confidence: Number(cropRead?.confidence || 0) }
+          finalResult = { ...finalResult, card_number: cropNum }
         }
       } catch (err) {
         finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
@@ -726,7 +733,7 @@ function ScannerTab() {
       const resolved = await autoResolveSetNumber(finalResult)
       finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
 
-      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
+      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
 
       if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
         const blockedHistory = { ...baseHistory, status: 'blocked_unverified_setid' }
@@ -826,6 +833,7 @@ function ScannerTab() {
           <div className="muted">No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'} � Detected lang: {aiResult.detected_language || '-'}</div>
           <div className="muted">Set# verify: {aiResult.set_number_verified ? 'verified' : 'unverified'} ({aiResult.set_number_resolution_reason || 'n/a'}){aiResult.set_number_original ? ` | from ${aiResult.set_number_original}` : ''}</div>
           <div className="muted">Crop pass: {aiResult.set_number_crop_attempted ? 'attempted' : 'not-run'}{aiResult.set_number_crop_confidence ? ` | confidence ${aiResult.set_number_crop_confidence}%` : ''}{aiResult.set_number_crop_error ? ` | error: ${aiResult.set_number_crop_error}` : ''}</div>
+          <div className="muted">Crop read: {aiResult.set_number_crop_raw || 'none'}{aiResult.set_number_before_crop ? ` | before: ${aiResult.set_number_before_crop}` : ''}{aiResult.set_number_crop_image_bytes ? ` | bytes: ${aiResult.set_number_crop_image_bytes}` : ''}</div>
           <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
@@ -936,6 +944,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
