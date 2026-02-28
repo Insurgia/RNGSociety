@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 22:57 UTC | fc4549aa'
+const BUILD_STAMP = 'BUILD 2026-02-28 23:03 UTC | 503327f3'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -364,24 +364,41 @@ function ScannerTab() {
     const rawSet = ai.set_name_native || ai.set_name_english || ai.set_name || ''
     const rawNumber = extractSetNumber(ai.card_number)
 
-    const queryParts = [rawName, rawSet, rawNumber, 'pokemon card']
+    const baseQuery = [rawName, rawSet, 'pokemon card']
       .filter(Boolean)
       .join(' ')
-    const query = encodeURIComponent(queryParts)
 
     try {
-      const url = 'https://r.jina.ai/http://pkmncards.com/?s=' + query + '&sort=date&display=images'
-      const text = await fetch(url).then((r) => r.text())
+      const q1 = encodeURIComponent(baseQuery)
+      const url1 = 'https://r.jina.ai/http://pkmncards.com/?s=' + q1 + '&sort=date&display=images'
+      const text1 = await fetch(url1).then((r) => r.text())
 
-      const allNums = [...text.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
-      const unique = [...new Set(allNums)]
+      const nums1 = [...text1.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
+      let unique = [...new Set(nums1)]
 
-      if (!unique.length) {
-        return { number: rawNumber, verified: !!rawNumber, reason: 'live-no-match' }
+      if (!unique.length && rawNumber) {
+        const q2 = encodeURIComponent(baseQuery + ' ' + rawNumber)
+        const url2 = 'https://r.jina.ai/http://pkmncards.com/?s=' + q2 + '&sort=date&display=images'
+        const text2 = await fetch(url2).then((r) => r.text())
+        const nums2 = [...text2.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
+        unique = [...new Set(nums2)]
       }
 
-      if (rawNumber && unique.includes(rawNumber)) {
-        return { number: rawNumber, verified: true, reason: 'live-exact' }
+      if (!unique.length) return { number: rawNumber, verified: !!rawNumber, reason: 'live-no-match' }
+      if (rawNumber && unique.includes(rawNumber)) return { number: rawNumber, verified: true, reason: 'live-exact' }
+
+      if (rawNumber) {
+        const [lhs, rhs] = rawNumber.split('/')
+        const lhsPad = String(lhs || '').padStart(3, '0')
+        const viable = unique
+          .map((n) => {
+            const [base, den] = n.split('/')
+            const d = digitDistance(String(base).padStart(3, '0'), lhsPad)
+            const rhsOk = !rhs || den === rhs
+            return { n, d, rhsOk }
+          })
+          .filter((x) => x.rhsOk)
+          .sort((a, b) => a.d - b.d)
       }
 
       if (rawNumber) {
@@ -389,9 +406,7 @@ function ScannerTab() {
         const lhsPad = String(lhs || '').padStart(3, '0')
         const viable = unique
           .map((n) => {
-            const parts = n.split('/')
-            const base = parts[0]
-            const den = parts[1]
+            const [base, den] = n.split('/')
             const d = digitDistance(String(base).padStart(3, '0'), lhsPad)
             const rhsOk = !rhs || den === rhs
             return { n, d, rhsOk }
@@ -404,10 +419,7 @@ function ScannerTab() {
         }
       }
 
-      if (unique.length === 1) {
-        return { number: unique[0], verified: true, reason: 'live-single-candidate', from: rawNumber || null }
-      }
-
+      if (unique.length === 1) return { number: unique[0], verified: true, reason: 'live-single-candidate', from: rawNumber || null }
       return { number: rawNumber, verified: false, reason: 'live-ambiguous' }
     } catch {
       return { number: rawNumber, verified: !!rawNumber, reason: 'live-source-unavailable' }
@@ -714,12 +726,17 @@ function ScannerTab() {
       const resolved = await autoResolveSetNumber(finalResult)
       finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
 
+      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
+
       if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
+        const blockedHistory = { ...baseHistory, status: 'blocked_unverified_setid' }
+        setScanHistory((prev) => [blockedHistory, ...prev].slice(0, 500))
+        await emitTelemetry('event', blockedHistory, 'scanner-events.jsonl')
         setAiResult(finalResult)
         setAiStatus('Scan incomplete: set number could not be auto-verified. Blocked until verified.')
         return
       }
-      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
+      const historyEntry = { ...baseHistory, status: 'verified' }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
       const route = await emitTelemetry('event', historyEntry, 'scanner-events.jsonl')
@@ -919,6 +936,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
