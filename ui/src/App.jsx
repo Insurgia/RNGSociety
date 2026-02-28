@@ -431,16 +431,37 @@ function ScannerTab() {
     setScrapeData(null)
     try {
       const text = await fetch(target).then((r) => r.text())
-      const prices = [...text.matchAll(/\$([0-9]+(?:\.[0-9]{1,2})?)/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n) && n > 0.5 && n < 5000)
-      if (!prices.length) {
+      const allPricesInOrder = [...text.matchAll(/\$([0-9]+(?:\.[0-9]{1,2})?)/g)]
+        .map((m) => Number(m[1]))
+        .filter((n) => Number.isFinite(n) && n > 0.5 && n < 5000)
+
+      if (!allPricesInOrder.length) {
         setScrapeStatus('No usable sold prices found.')
         return
       }
-      prices.sort((a,b)=>a-b)
-      const median = prices[Math.floor(prices.length/2)]
-      const avg = prices.reduce((a,b)=>a+b,0)/prices.length
-      setScrapeData({ sample: prices.length, median: Number(median.toFixed(2)), average: Number(avg.toFixed(2)) })
-      setScrapeStatus(`Sold comps found: ${prices.length}`)
+
+      const recent5 = allPricesInOrder.slice(0, 5)
+      const recentAvg = recent5.reduce((a, b) => a + b, 0) / recent5.length
+      const recentMedianSorted = [...recent5].sort((a, b) => a - b)
+      const recentMedian = recentMedianSorted[Math.floor(recentMedianSorted.length / 2)]
+
+      const sortedAll = [...allPricesInOrder].sort((a, b) => a - b)
+      const globalMedian = sortedAll[Math.floor(sortedAll.length / 2)]
+      const globalAvg = allPricesInOrder.reduce((a, b) => a + b, 0) / allPricesInOrder.length
+
+      // Current-market leaning blend: 85% recent5, 15% full-set median
+      const weightedCurrent = (recentAvg * 0.85) + (globalMedian * 0.15)
+
+      setScrapeData({
+        sample: allPricesInOrder.length,
+        recentSample: recent5.length,
+        recentMedian: Number(recentMedian.toFixed(2)),
+        recentAverage: Number(recentAvg.toFixed(2)),
+        globalMedian: Number(globalMedian.toFixed(2)),
+        globalAverage: Number(globalAvg.toFixed(2)),
+        currentMarket: Number(weightedCurrent.toFixed(2)),
+      })
+      setScrapeStatus(`Sold comps found: ${allPricesInOrder.length} (weighted to latest ${recent5.length})`)
     } catch (e) {
       setScrapeStatus(`Scrape failed: ${e?.message || 'unknown error'}`)
     }
@@ -607,7 +628,7 @@ function ScannerTab() {
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
           <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
           {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
-          {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay sold median: ${scrapeData.median} � avg: ${scrapeData.average} � samples: {scrapeData.sample}</div> : null}</div> : null}
+          {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">Current market (weighted latest 5): ${scrapeData.currentMarket} � Recent avg: ${scrapeData.recentAverage} � Recent median: ${scrapeData.recentMedian} � Global median: ${scrapeData.globalMedian} � samples: {scrapeData.sample}</div> : null}</div> : null}
 
           <div className="action-row" style={{ marginTop: 10 }}>
             <button className="btn" onClick={() => submitFeedback('correct')}>? Correct</button>
