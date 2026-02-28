@@ -233,6 +233,31 @@ function ScannerTab() {
     return true
   }
 
+  const validateTelemetryWebhook = async () => {
+    if (!telemetryWebhook) {
+      setTelemetryStatus('Webhook empty.')
+      window.alert('Telemetry webhook is empty.')
+      return
+    }
+    setTelemetryStatus('Validating webhook with real POST...')
+    try {
+      await postWebhook('event', {
+        ts: new Date().toISOString(),
+        hash: 'validate-' + Date.now(),
+        model: 'telemetry-validator',
+        confidence: 100,
+        estimatedCost: 0,
+        note: 'connectivity test',
+      })
+      setTelemetryStatus('Webhook reachable (POST succeeded).')
+      window.alert('Telemetry webhook test succeeded.')
+    } catch (err) {
+      const msg = String(err?.message || err || 'unknown error')
+      setTelemetryStatus(`Webhook failed: ${msg}`)
+      window.alert(`Telemetry webhook test failed: ${msg}`)
+    }
+  }
+
   const emitTelemetry = async (kind, payload, fileName) => {
     try {
       if (telemetryDir) {
@@ -525,7 +550,7 @@ function ScannerTab() {
           <input value={telemetryWebhook} onChange={(e) => setTelemetryWebhook(e.target.value)} placeholder="https://your-endpoint/scanner-ingest" />
         </label>
         <div className="action-row">
-          <button className="btn" onClick={() => setTelemetryStatus(telemetryWebhook ? 'Webhook configured.' : 'Webhook empty.')}>Validate telemetry config</button>
+          <button className="btn" onClick={validateTelemetryWebhook}>Validate telemetry (real POST)</button>
         </div>
         <div className="muted">Spent today (est): ${spentToday.toFixed(4)} � Cache entries: ${Object.keys(scanCache).length}</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
