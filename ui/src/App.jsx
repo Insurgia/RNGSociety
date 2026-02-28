@@ -187,19 +187,22 @@ function ScannerTab() {
   const [aiPrimaryModel, setAiPrimaryModel] = useState(() => localStorage.getItem('rng_ai_model_primary') || 'openai/gpt-4o-mini')
   const [aiFallbackModel, setAiFallbackModel] = useState(() => localStorage.getItem('rng_ai_model_fallback') || 'openai/gpt-4o')
   const [aiThreshold, setAiThreshold] = useState(() => Number(localStorage.getItem('rng_ai_threshold') || 85))
+  const [languageMode, setLanguageMode] = useState(() => localStorage.getItem('rng_lang_mode') || 'auto')
   const [dailyBudgetCap, setDailyBudgetCap] = useState(() => Number(localStorage.getItem('rng_daily_budget_cap') || 2))
   const [aiStatus, setAiStatus] = useState('')
   const [aiResult, setAiResult] = useState(null)
   const [scanHistory, setScanHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_scan_history_v1') || '[]') } catch { return [] } })
   const [scanCache, setScanCache] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_scan_cache_v1') || '{}') } catch { return {} } })
+  const [correction, setCorrection] = useState('')
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
   useEffect(() => { localStorage.setItem('rng_ai_model_primary', aiPrimaryModel) }, [aiPrimaryModel])
   useEffect(() => { localStorage.setItem('rng_ai_model_fallback', aiFallbackModel) }, [aiFallbackModel])
   useEffect(() => { localStorage.setItem('rng_ai_threshold', String(aiThreshold)) }, [aiThreshold])
+  useEffect(() => { localStorage.setItem('rng_lang_mode', languageMode) }, [languageMode])
   useEffect(() => { localStorage.setItem('rng_daily_budget_cap', String(dailyBudgetCap)) }, [dailyBudgetCap])
-  useEffect(() => { localStorage.setItem('rng_scan_history_v1', JSON.stringify(scanHistory.slice(0, 300))) }, [scanHistory])
+  useEffect(() => { localStorage.setItem('rng_scan_history_v1', JSON.stringify(scanHistory.slice(0, 500))) }, [scanHistory])
   useEffect(() => { localStorage.setItem('rng_scan_cache_v1', JSON.stringify(scanCache)) }, [scanCache])
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -237,7 +240,7 @@ function ScannerTab() {
     setOcrStatus('OCR running...')
     try {
       const { recognize } = await import('tesseract.js')
-      const out = await recognize(file, 'eng')
+      const out = await recognize(file, languageMode === 'japanese' ? 'jpn+eng' : 'eng')
       setOcrText(out?.data?.text?.trim() || '')
       setOcrStatus('OCR complete.')
     } catch { setOcrStatus('OCR failed. Check console/network and retry.') }
@@ -245,14 +248,16 @@ function ScannerTab() {
 
   const verifyAgainstDb = (ai) => {
     if (!ai || !referenceDb.length) return null
-    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-    const target = norm(`${ai.card_name || ''} ${ai.set_name || ''} ${ai.card_number || ''}`)
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿]/g, '')
+    const primaryName = languageMode === 'japanese' ? (ai.card_name_native || ai.card_name) : (ai.card_name_english || ai.card_name)
+    const setName = languageMode === 'japanese' ? (ai.set_name_native || ai.set_name) : (ai.set_name_english || ai.set_name)
+    const target = norm(`${primaryName || ''} ${setName || ''} ${ai.card_number || ''}`)
     const scored = referenceDb.map((r) => {
       const hay = norm(r.name)
       let score = 0
-      if (hay.includes(norm(ai.card_name))) score += 60
+      if (primaryName && hay.includes(norm(primaryName))) score += 60
       if (ai.card_number && hay.includes(norm(ai.card_number))) score += 25
-      if (ai.set_name && hay.includes(norm(ai.set_name))) score += 15
+      if (setName && hay.includes(norm(setName))) score += 15
       if (target && hay.includes(target)) score += 20
       return { ...r, verifyScore: score }
     }).sort((a, b) => b.verifyScore - a.verifyScore)
@@ -278,10 +283,7 @@ function ScannerTab() {
   }
 
   const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(r.result)
-    r.onerror = reject
-    r.readAsDataURL(blob)
+    const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob)
   })
 
   const getRatePer1K = (model) => {
@@ -290,7 +292,6 @@ function ScannerTab() {
     if (m.includes('4o')) return { in: 0.0025, out: 0.01 }
     return { in: 0.0005, out: 0.002 }
   }
-
   const estimateCost = (model, usage) => {
     const rate = getRatePer1K(model)
     const inTok = Number(usage?.prompt_tokens || 0)
@@ -298,8 +299,17 @@ function ScannerTab() {
     return (inTok / 1000) * rate.in + (outTok / 1000) * rate.out
   }
 
+  const buildPrompt = () => {
+    const langInstruction = languageMode === 'japanese'
+      ? 'This is likely a Japanese Pokemon card. Prefer Japanese/native naming and printed Japanese set conventions.'
+      : languageMode === 'english'
+      ? 'This is likely an English Pokemon card. Prefer English naming and set conventions.'
+      : 'Auto-detect whether card is Japanese or English.'
+    return `Identify this Pokemon trading card from the image. ${langInstruction} Return ONLY valid JSON with keys: detected_language, card_name, card_name_native, card_name_english, set_name, set_name_native, set_name_english, card_number, rarity, confidence (0-100), alternatives (array up to 3), reasoning_short.`
+  }
+
   const callVisionModel = async (model, imageDataUrl) => {
-    const prompt = 'Identify this Pokemon trading card. Return ONLY valid JSON with keys: card_name, set_name, card_number, rarity, confidence (0-100), alternatives (array of up to 3 strings), reasoning_short.'
+    const prompt = buildPrompt()
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
@@ -317,6 +327,13 @@ function ScannerTab() {
     return { parsed, usage: json?.usage || {}, model }
   }
 
+  const submitFeedback = (verdict, correctedLabel = '') => {
+    if (!aiResult?.scanHash) return
+    setScanHistory((prev) => prev.map((h) => h.hash === aiResult.scanHash ? { ...h, verdict, correctedLabel: correctedLabel || null } : h))
+    setAiResult((prev) => prev ? { ...prev, verdict, correctedLabel: correctedLabel || null } : prev)
+    setAiStatus(`Feedback saved: ${verdict}${correctedLabel ? ' (' + correctedLabel + ')' : ''}`)
+  }
+
   const runAiIdentify = async (file) => {
     if (!file) return setAiStatus('Pick a card image first.')
     if (!aiApiKey) return setAiStatus('Add API key first.')
@@ -329,7 +346,7 @@ function ScannerTab() {
       const scanHash = await hashFile(file)
       const cached = scanCache[scanHash]
       if (cached) {
-        setAiResult({ ...cached.result, cached: true })
+        setAiResult({ ...cached.result, cached: true, scanHash })
         setAiStatus('Cache hit: returned previous result instantly.')
         return
       }
@@ -343,7 +360,7 @@ function ScannerTab() {
       const primaryVerified = verifyAgainstDb(primary.parsed)
       let totalCost = estimateCost(aiPrimaryModel, primary.usage)
 
-      let finalResult = { ...primary.parsed, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false }
+      let finalResult = { ...primary.parsed, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false, scanHash }
       const needsEscalation = primaryConfidence < Number(aiThreshold || 85) || !primaryVerified
 
       if (needsEscalation) {
@@ -351,19 +368,11 @@ function ScannerTab() {
         const fallback = await callVisionModel(aiFallbackModel, imageDataUrl)
         totalCost += estimateCost(aiFallbackModel, fallback.usage)
         const fallbackVerified = verifyAgainstDb(fallback.parsed)
-        finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified } }
+        finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
 
-      const historyEntry = {
-        ts: new Date().toISOString(),
-        hash: scanHash,
-        card: finalResult.card_name || null,
-        model: finalResult.routedModel,
-        confidence: Number(finalResult.confidence || 0),
-        escalated: !!finalResult.escalated,
-        estimatedCost: Number(totalCost.toFixed(6)),
-      }
-      setScanHistory((prev) => [historyEntry, ...prev].slice(0, 300))
+      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode }
+      setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
 
       setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
@@ -375,7 +384,7 @@ function ScannerTab() {
     }
   }
 
-  return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify with safeguards.">
+  return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify with safeguards + feedback.">
     <div className="scanner-grid">
       <div className="panel">
         <h3>Reference DB</h3>
@@ -394,6 +403,13 @@ function ScannerTab() {
 
       <div className="panel">
         <h3>OCR Test</h3>
+        <label>OCR language mode
+          <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)}>
+            <option value="auto">Auto</option>
+            <option value="english">English</option>
+            <option value="japanese">Japanese</option>
+          </select>
+        </label>
         <label>Card image for OCR<input type="file" accept="image/*" onChange={(e) => runOcr(e.target.files?.[0])} /></label>
         <p className="muted">{ocrStatus}</p>
         <textarea rows={6} value={ocrText} onChange={(e) => setOcrText(e.target.value)} placeholder="OCR output appears here..." />
@@ -402,6 +418,13 @@ function ScannerTab() {
       <div className="panel">
         <h3>AI Identify (Vision)</h3>
         <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label>
+        <label>Language mode
+          <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)}>
+            <option value="auto">Auto</option>
+            <option value="english">English</option>
+            <option value="japanese">Japanese</option>
+          </select>
+        </label>
         <label>Primary model<input value={aiPrimaryModel} onChange={(e) => setAiPrimaryModel(e.target.value)} /></label>
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
@@ -410,14 +433,24 @@ function ScannerTab() {
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
-          <div><strong>{aiResult.card_name || 'Unknown card'}</strong></div>
-          <div className="muted">Set: {aiResult.set_name || '-'} � No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'}</div>
+          <div><strong>{aiResult.card_name_native || aiResult.card_name || 'Unknown card'}</strong></div>
+          <div className="muted">Native: {aiResult.card_name_native || '-'} � EN: {aiResult.card_name_english || '-'}</div>
+          <div className="muted">Set native: {aiResult.set_name_native || aiResult.set_name || '-'} � Set EN: {aiResult.set_name_english || '-'}</div>
+          <div className="muted">No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'} � Detected lang: {aiResult.detected_language || '-'}</div>
           <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
-          {aiResult.primaryCandidate ? <div className="muted">Primary candidate: {aiResult.primaryCandidate.card_name || '-'} ({aiResult.primaryCandidate.confidence || '-'}%)</div> : null}
           <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
           {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
+
+          <div className="action-row" style={{ marginTop: 10 }}>
+            <button className="btn" onClick={() => submitFeedback('correct')}>? Correct</button>
+            <button className="btn" onClick={() => submitFeedback('incorrect')}>? Incorrect</button>
+          </div>
+          <label style={{ marginTop: 8 }}>Corrected label (optional)
+            <input value={correction} onChange={(e) => setCorrection(e.target.value)} placeholder="e.g., Charizard ex 134/108 JP" />
+          </label>
+          <button className="btn" style={{ marginTop: 8 }} onClick={() => submitFeedback('corrected', correction)}>?? Save corrected label</button>
         </div> : null}
       </div>
     </div>
