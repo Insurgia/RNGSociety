@@ -191,9 +191,11 @@ function ScannerTab() {
   const [dailyBudgetCap, setDailyBudgetCap] = useState(() => Number(localStorage.getItem('rng_daily_budget_cap') || 2))
   const [aiStatus, setAiStatus] = useState('')
   const [aiResult, setAiResult] = useState(null)
-  const [scanHistory, setScanHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_scan_history_v1') || '[]') } catch { return [] } })
-  const [scanCache, setScanCache] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_scan_cache_v1') || '{}') } catch { return {} } })
+  const [scanHistory, setScanHistory] = useState([])
+  const [scanCache, setScanCache] = useState({})
   const [correction, setCorrection] = useState('')
+  const [telemetryDir, setTelemetryDir] = useState(null)
+  const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -202,11 +204,43 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_ai_threshold', String(aiThreshold)) }, [aiThreshold])
   useEffect(() => { localStorage.setItem('rng_lang_mode', languageMode) }, [languageMode])
   useEffect(() => { localStorage.setItem('rng_daily_budget_cap', String(dailyBudgetCap)) }, [dailyBudgetCap])
-  useEffect(() => { localStorage.setItem('rng_scan_history_v1', JSON.stringify(scanHistory.slice(0, 500))) }, [scanHistory])
-  useEffect(() => { localStorage.setItem('rng_scan_cache_v1', JSON.stringify(scanCache)) }, [scanCache])
+
 
   const todayKey = new Date().toISOString().slice(0, 10)
   const spentToday = useMemo(() => scanHistory.filter((h) => String(h.ts || '').startsWith(todayKey)).reduce((a, b) => a + Number(b.estimatedCost || 0), 0), [scanHistory, todayKey])
+
+  const appendJsonl = async (name, payload) => {
+    if (!telemetryDir) return
+    const fileHandle = await telemetryDir.getFileHandle(name, { create: true })
+    const file = await fileHandle.getFile()
+    const existing = await file.text()
+    const w = await fileHandle.createWritable()
+    await w.write(existing + JSON.stringify(payload) + '\n')
+    await w.close()
+  }
+
+  const connectTelemetryFolder = async () => {
+    try {
+      if (!window.showDirectoryPicker) {
+        setTelemetryStatus('Browser does not support filesystem writing (need Chromium desktop).')
+        return
+      }
+      const dir = await window.showDirectoryPicker()
+      setTelemetryDir(dir)
+      setTelemetryStatus('Telemetry connected to selected folder.')
+
+      // Load existing events to restore today spend + history context
+      try {
+        const evHandle = await dir.getFileHandle('scanner-events.jsonl', { create: true })
+        const evFile = await evHandle.getFile()
+        const lines = (await evFile.text()).split(/\n+/).filter(Boolean)
+        const parsed = lines.map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+        setScanHistory(parsed.slice(-500).reverse())
+      } catch {}
+    } catch {
+      setTelemetryStatus('Telemetry folder connection cancelled.')
+    }
+  }
 
   const buildDb = async (files) => {
     const imageFiles = Array.from(files || []).filter((f) => f.type.startsWith('image/'))
@@ -327,10 +361,21 @@ function ScannerTab() {
     return { parsed, usage: json?.usage || {}, model }
   }
 
-  const submitFeedback = (verdict, correctedLabel = '') => {
+  const submitFeedback = async (verdict, correctedLabel = '') => {
     if (!aiResult?.scanHash) return
+    const feedback = {
+      ts: new Date().toISOString(),
+      hash: aiResult.scanHash,
+      verdict,
+      correctedLabel: correctedLabel || null,
+      model: aiResult.routedModel || null,
+      confidence: Number(aiResult.confidence || 0),
+      detected_language: aiResult.detected_language || languageMode,
+      predicted_card: aiResult.card_name_native || aiResult.card_name || null,
+    }
     setScanHistory((prev) => prev.map((h) => h.hash === aiResult.scanHash ? { ...h, verdict, correctedLabel: correctedLabel || null } : h))
     setAiResult((prev) => prev ? { ...prev, verdict, correctedLabel: correctedLabel || null } : prev)
+    if (telemetryDir) await appendJsonl('scanner-feedback.jsonl', feedback)
     setAiStatus(`Feedback saved: ${verdict}${correctedLabel ? ' (' + correctedLabel + ')' : ''}`)
   }
 
@@ -374,6 +419,7 @@ function ScannerTab() {
       const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
+      if (telemetryDir) await appendJsonl('scanner-events.jsonl', historyEntry)
 
       setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
       setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: $${historyEntry.estimatedCost}`)
@@ -429,7 +475,11 @@ function ScannerTab() {
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
-        <div className="muted">Spent today (est): $${spentToday.toFixed(4)} � Cache entries: ${Object.keys(scanCache).length}</div>
+        <div className="action-row">
+          <button className="btn" onClick={connectTelemetryFolder}>Connect telemetry folder</button>
+          <span className="muted">{telemetryStatus}</span>
+        </div>
+        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} � Cache entries: ${Object.keys(scanCache).length}</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
