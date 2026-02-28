@@ -201,6 +201,7 @@ function ScannerTab() {
   const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
   const [scrapeStatus, setScrapeStatus] = useState('')
   const [scrapeData, setScrapeData] = useState(null)
+  const [tcgScrapeData, setTcgScrapeData] = useState(null)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -423,6 +424,26 @@ function ScannerTab() {
     return { parsed, usage: json?.usage || {}, model }
   }
 
+  const summarizePrices = (allPricesInOrder) => {
+    const recent5 = allPricesInOrder.slice(0, 5)
+    const recentAvg = recent5.reduce((a, b) => a + b, 0) / recent5.length
+    const recentMedianSorted = [...recent5].sort((a, b) => a - b)
+    const recentMedian = recentMedianSorted[Math.floor(recentMedianSorted.length / 2)]
+    const sortedAll = [...allPricesInOrder].sort((a, b) => a - b)
+    const globalMedian = sortedAll[Math.floor(sortedAll.length / 2)]
+    const globalAvg = allPricesInOrder.reduce((a, b) => a + b, 0) / allPricesInOrder.length
+    const currentMarket = (recentAvg * 0.85) + (globalMedian * 0.15)
+    return {
+      sample: allPricesInOrder.length,
+      recentSample: recent5.length,
+      recentMedian: Number(recentMedian.toFixed(2)),
+      recentAverage: Number(recentAvg.toFixed(2)),
+      globalMedian: Number(globalMedian.toFixed(2)),
+      globalAverage: Number(globalAvg.toFixed(2)),
+      currentMarket: Number(currentMarket.toFixed(2)),
+    }
+  }
+
   const runExperimentalEbayScrape = async () => {
     if (!aiResult) return
     const query = encodeURIComponent(`${aiResult.card_name_english || aiResult.card_name || ''} ${aiResult.card_number || ''} pokemon card sold`)
@@ -440,30 +461,66 @@ function ScannerTab() {
         return
       }
 
-      const recent5 = allPricesInOrder.slice(0, 5)
-      const recentAvg = recent5.reduce((a, b) => a + b, 0) / recent5.length
-      const recentMedianSorted = [...recent5].sort((a, b) => a - b)
-      const recentMedian = recentMedianSorted[Math.floor(recentMedianSorted.length / 2)]
-
-      const sortedAll = [...allPricesInOrder].sort((a, b) => a - b)
-      const globalMedian = sortedAll[Math.floor(sortedAll.length / 2)]
-      const globalAvg = allPricesInOrder.reduce((a, b) => a + b, 0) / allPricesInOrder.length
-
-      // Current-market leaning blend: 85% recent5, 15% full-set median
-      const weightedCurrent = (recentAvg * 0.85) + (globalMedian * 0.15)
-
-      setScrapeData({
-        sample: allPricesInOrder.length,
-        recentSample: recent5.length,
-        recentMedian: Number(recentMedian.toFixed(2)),
-        recentAverage: Number(recentAvg.toFixed(2)),
-        globalMedian: Number(globalMedian.toFixed(2)),
-        globalAverage: Number(globalAvg.toFixed(2)),
-        currentMarket: Number(weightedCurrent.toFixed(2)),
-      })
-      setScrapeStatus(`Sold comps found: ${allPricesInOrder.length} (weighted to latest ${recent5.length})`)
+      const summary = summarizePrices(allPricesInOrder)
+      setScrapeData(summary)
+      setScrapeStatus(`Sold comps found: ${allPricesInOrder.length} (weighted to latest ${summary.recentSample})`)
     } catch (e) {
       setScrapeStatus(`Scrape failed: ${e?.message || 'unknown error'}`)
+    }
+  }
+
+
+  const runExperimentalHybridScrape = async () => {
+    if (!aiResult) return
+    setScrapeStatus('Scraping eBay + TCG...')
+    setScrapeData(null)
+    setTcgScrapeData(null)
+
+    const name = aiResult.card_name_english || aiResult.card_name || ''
+    const number = aiResult.card_number || ''
+
+    const ebayQ = encodeURIComponent(`${name} ${number} pokemon card sold`)
+    const tcgQ = encodeURIComponent(`${name} ${number} site:tcgplayer.com pokemon`)
+
+    const ebayUrl = `https://r.jina.ai/http://www.ebay.com/sch/i.html?_nkw=${ebayQ}&LH_Sold=1&LH_Complete=1&rt=nc`
+    const tcgUrl = `https://r.jina.ai/http://www.google.com/search?q=${tcgQ}`
+
+    try {
+      const [ebayText, tcgText] = await Promise.all([
+        fetch(ebayUrl).then((r) => r.text()),
+        fetch(tcgUrl).then((r) => r.text()),
+      ])
+
+      const parsePrices = (text) => [...text.matchAll(/\$([0-9]+(?:\.[0-9]{1,2})?)/g)]
+        .map((m) => Number(m[1]))
+        .filter((n) => Number.isFinite(n) && n > 0.5 && n < 5000)
+
+      const ebayPrices = parsePrices(ebayText)
+      const tcgPrices = parsePrices(tcgText)
+
+      if (!ebayPrices.length && !tcgPrices.length) {
+        setScrapeStatus('No usable prices found from either source.')
+        return
+      }
+
+      const ebaySummary = ebayPrices.length ? summarizePrices(ebayPrices) : null
+      const tcgSummary = tcgPrices.length ? summarizePrices(tcgPrices) : null
+      setScrapeData(ebaySummary)
+      setTcgScrapeData(tcgSummary)
+
+      let blended = null
+      if (ebaySummary && tcgSummary) {
+        const wE = Math.min(0.8, Math.max(0.2, ebaySummary.sample / (ebaySummary.sample + tcgSummary.sample)))
+        const wT = 1 - wE
+        blended = Number((ebaySummary.currentMarket * wE + tcgSummary.currentMarket * wT).toFixed(2))
+      } else {
+        blended = (ebaySummary || tcgSummary).currentMarket
+      }
+
+      setScrapeStatus(`Hybrid done. Current blended: $${blended}`)
+      setAiResult((prev) => prev ? { ...prev, pricing: { ebay: ebaySummary, tcg: tcgSummary, blendedCurrent: blended } } : prev)
+    } catch (e) {
+      setScrapeStatus(`Hybrid scrape failed: ${e?.message || 'unknown error'}`)
     }
   }
 
@@ -601,7 +658,8 @@ function ScannerTab() {
         <label>Pricing mode
           <select value={pricingMode} onChange={(e) => setPricingMode(e.target.value)}>
             <option value="none">None</option>
-            <option value="experimental_scrape">Experimental scrape (dev only)</option>
+            <option value="experimental_scrape">Experimental eBay scrape (dev only)</option>
+            <option value="experimental_scrape_hybrid">Experimental TCG+eBay hybrid (dev only)</option>
           </select>
         </label>
         <div className="action-row">
