@@ -363,50 +363,79 @@ function ScannerTab() {
 
   const autoResolveSetNumber = (ai) => {
     const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
+    const rawSet = ai.set_name_native || ai.set_name_english || ai.set_name || ''
     const rawNumber = extractSetNumber(ai.card_number)
 
-    const source = [
-      ...referenceDb.map((r) => ({ name: r.name, number: extractSetNumber(r.name), language: languageMode === 'japanese' ? 'Japanese' : 'English' })),
-      ...catalog.map((r) => ({ name: r.name, number: r.number || extractSetNumber(r.name), language: r.language || '' })),
-    ]
+    // DB-first resolver: canonical catalog is source of truth
+    const source = catalog.map((r) => ({
+      name: r.name || '',
+      setName: r.setName || '',
+      number: r.number || '',
+      language: r.language || '',
+    }))
 
     if (!source.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-catalog' }
 
     const nameNorm = normalizeName(rawName)
-    const candidates = source
-      .map((r) => ({ name: r.name, nameNorm: normalizeName(r.name), number: r.number }))
-      .filter((r) => r.number && (r.nameNorm.includes(nameNorm) || nameNorm.includes(r.nameNorm)))
+    const setNorm = normalizeName(rawSet)
 
-    if (!candidates.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match-in-catalog' }
+    const byName = source.filter((r) => {
+      const rn = normalizeName(r.name)
+      return nameNorm && (rn.includes(nameNorm) || nameNorm.includes(rn))
+    })
+
+    if (!byName.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match-in-catalog' }
+
+    const byNameAndSet = byName.filter((r) => {
+      if (!setNorm) return true
+      const rs = normalizeName(r.setName)
+      if (!rs) return true
+      return rs.includes(setNorm) || setNorm.includes(rs)
+    })
+
+    const candidatePool = byNameAndSet.length ? byNameAndSet : byName
+    const uniqueNumbers = [...new Set(candidatePool.map((r) => r.number).filter(Boolean))]
+
+    // If catalog has a single number for this name(+set), trust it outright
+    if (uniqueNumbers.length === 1) {
+      const canonical = uniqueNumbers[0]
+      const resolved = canonical.includes('/')
+        ? canonical
+        : (rawNumber && rawNumber.includes('/') ? `${canonical}/${rawNumber.split('/')[1]}` : canonical)
+      return { number: resolved, verified: true, reason: 'db-first-unique' }
+    }
 
     if (rawNumber) {
-      const exact = candidates.find((cand) => cand.number === rawNumber)
+      const exact = candidatePool.find((cand) => cand.number === rawNumber)
       if (exact) return { number: rawNumber, verified: true, reason: 'exact' }
 
       const [lhs, rhs] = rawNumber.split('/')
       const lhsPad = String(lhs || '').padStart(3, '0')
 
-      const normalized = candidates.map((cand) => {
-        const baseNum = String(cand.number).includes('/') ? cand.number.split('/')[0] : String(cand.number)
-        const basePad = String(baseNum).padStart(3, '0')
-        const rhsOk = String(cand.number).includes('/') ? (cand.number.split('/')[1] === rhs) : true
-        return { ...cand, baseNum, basePad, rhsOk }
-      })
-
-      const viable = normalized
+      const viable = candidatePool
+        .map((cand) => {
+          const base = String(cand.number).split('/')[0]
+          const den = String(cand.number).includes('/') ? String(cand.number).split('/')[1] : rhs
+          const d = digitDistance(String(base).padStart(3, '0'), lhsPad)
+          const rhsOk = !rhs || !den || den === rhs
+          return { ...cand, base, den, d, rhsOk }
+        })
         .filter((cand) => cand.rhsOk)
-        .map((cand) => ({ ...cand, d: digitDistance(cand.basePad, lhsPad) }))
         .sort((a, b) => a.d - b.d)
 
       if (viable.length && viable[0].d <= 1) {
-        return { number: rhs ? `${viable[0].baseNum}/${rhs}` : viable[0].baseNum, verified: true, reason: 'autocorrect-one-digit', from: rawNumber }
+        const best = viable[0]
+        return {
+          number: best.den ? `${best.base}/${best.den}` : best.base,
+          verified: true,
+          reason: 'autocorrect-one-digit',
+          from: rawNumber,
+        }
       }
     }
 
-    const top = candidates[0]
-    return { number: top?.number || rawNumber, verified: !!top?.number, reason: 'name-fallback', from: rawNumber }
+    return { number: rawNumber, verified: false, reason: 'ambiguous-catalog-match' }
   }
-
   const verifyAgainstDb = (ai) => {
     if (!ai || !referenceDb.length) return null
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿]/g, '')
