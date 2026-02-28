@@ -198,6 +198,9 @@ function ScannerTab() {
   const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '')
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
   const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
+  const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
+  const [scrapeStatus, setScrapeStatus] = useState('')
+  const [scrapeData, setScrapeData] = useState(null)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -208,6 +211,7 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_daily_budget_cap', String(dailyBudgetCap)) }, [dailyBudgetCap])
   useEffect(() => { localStorage.setItem('rng_telemetry_webhook', telemetryWebhook) }, [telemetryWebhook])
   useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
+  useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -419,6 +423,29 @@ function ScannerTab() {
     return { parsed, usage: json?.usage || {}, model }
   }
 
+  const runExperimentalEbayScrape = async () => {
+    if (!aiResult) return
+    const query = encodeURIComponent(`${aiResult.card_name_english || aiResult.card_name || ''} ${aiResult.card_number || ''} pokemon card sold`)
+    const target = `https://r.jina.ai/http://www.ebay.com/sch/i.html?_nkw=${query}&LH_Sold=1&LH_Complete=1&rt=nc`
+    setScrapeStatus('Scraping sold comps...')
+    setScrapeData(null)
+    try {
+      const text = await fetch(target).then((r) => r.text())
+      const prices = [...text.matchAll(/\$([0-9]+(?:\.[0-9]{1,2})?)/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n) && n > 0.5 && n < 5000)
+      if (!prices.length) {
+        setScrapeStatus('No usable sold prices found.')
+        return
+      }
+      prices.sort((a,b)=>a-b)
+      const median = prices[Math.floor(prices.length/2)]
+      const avg = prices.reduce((a,b)=>a+b,0)/prices.length
+      setScrapeData({ sample: prices.length, median: Number(median.toFixed(2)), average: Number(avg.toFixed(2)) })
+      setScrapeStatus(`Sold comps found: ${prices.length}`)
+    } catch (e) {
+      setScrapeStatus(`Scrape failed: ${e?.message || 'unknown error'}`)
+    }
+  }
+
   const submitFeedback = async (verdict, correctedLabel = '') => {
     if (!aiResult?.scanHash) return
     const feedback = {
@@ -483,7 +510,12 @@ function ScannerTab() {
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
 
-      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
+      if (!finalResult.card_number || !String(finalResult.card_number).includes('/')) {
+        setAiResult(finalResult)
+        setAiStatus('Scan incomplete: missing required set number (e.g. 123/124). Please rescan.')
+        return
+      }
+      const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
       const route = await emitTelemetry('event', historyEntry, 'scanner-events.jsonl')
@@ -545,6 +577,12 @@ function ScannerTab() {
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
+        <label>Pricing mode
+          <select value={pricingMode} onChange={(e) => setPricingMode(e.target.value)}>
+            <option value="none">None</option>
+            <option value="experimental_scrape">Experimental scrape (dev only)</option>
+          </select>
+        </label>
         <div className="action-row">
           <button className="btn" onClick={connectTelemetryFolder}>Connect telemetry folder</button>
           <span className="muted">{telemetryStatus}</span>
@@ -569,6 +607,7 @@ function ScannerTab() {
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
           <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
           {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
+          {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay sold median: ${scrapeData.median} � avg: ${scrapeData.average} � samples: {scrapeData.sample}</div> : null}</div> : null}
 
           <div className="action-row" style={{ marginTop: 10 }}>
             <button className="btn" onClick={() => submitFeedback('correct')}>? Correct</button>
