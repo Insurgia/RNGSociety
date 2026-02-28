@@ -370,8 +370,9 @@ function ScannerTab() {
         number: extractSetNumber(r.name),
       }))
       .filter((r) => r.number && (r.nameNorm.includes(nameNorm) || nameNorm.includes(r.nameNorm)))
+      .filter((r) => languageMode === 'auto' ? true : normalizeName(r.language).includes(normalizeName(languageMode === 'japanese' ? 'japanese' : 'english')) )
 
-    if (!candidates.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match' }
+    if (!candidates.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-name-match-in-catalog' }
 
     if (rawNumber) {
       const exact = candidates.find((c) => c.number === rawNumber)
