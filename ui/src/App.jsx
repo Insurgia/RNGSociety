@@ -187,19 +187,28 @@ function ScannerTab() {
   const [aiPrimaryModel, setAiPrimaryModel] = useState(() => localStorage.getItem('rng_ai_model_primary') || 'openai/gpt-4o-mini')
   const [aiFallbackModel, setAiFallbackModel] = useState(() => localStorage.getItem('rng_ai_model_fallback') || 'openai/gpt-4o')
   const [aiThreshold, setAiThreshold] = useState(() => Number(localStorage.getItem('rng_ai_threshold') || 85))
+  const [dailyBudgetCap, setDailyBudgetCap] = useState(() => Number(localStorage.getItem('rng_daily_budget_cap') || 2))
   const [aiStatus, setAiStatus] = useState('')
   const [aiResult, setAiResult] = useState(null)
+  const [scanHistory, setScanHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_scan_history_v1') || '[]') } catch { return [] } })
+  const [scanCache, setScanCache] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_scan_cache_v1') || '{}') } catch { return {} } })
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
   useEffect(() => { localStorage.setItem('rng_ai_model_primary', aiPrimaryModel) }, [aiPrimaryModel])
   useEffect(() => { localStorage.setItem('rng_ai_model_fallback', aiFallbackModel) }, [aiFallbackModel])
   useEffect(() => { localStorage.setItem('rng_ai_threshold', String(aiThreshold)) }, [aiThreshold])
+  useEffect(() => { localStorage.setItem('rng_daily_budget_cap', String(dailyBudgetCap)) }, [dailyBudgetCap])
+  useEffect(() => { localStorage.setItem('rng_scan_history_v1', JSON.stringify(scanHistory.slice(0, 300))) }, [scanHistory])
+  useEffect(() => { localStorage.setItem('rng_scan_cache_v1', JSON.stringify(scanCache)) }, [scanCache])
+
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const spentToday = useMemo(() => scanHistory.filter((h) => String(h.ts || '').startsWith(todayKey)).reduce((a, b) => a + Number(b.estimatedCost || 0), 0), [scanHistory, todayKey])
 
   const buildDb = async (files) => {
     const imageFiles = Array.from(files || []).filter((f) => f.type.startsWith('image/'))
     if (!imageFiles.length) return setDbStatus('No images selected.')
-    setDbStatus(`Building DB from ${imageFiles.length} images...`)
+    setDbStatus('Building DB...')
     const next = []
     for (let i = 0; i < imageFiles.length; i++) {
       const f = imageFiles[i]
@@ -250,6 +259,45 @@ function ScannerTab() {
     return scored[0]?.verifyScore > 0 ? scored[0] : null
   }
 
+  const hashFile = async (file) => {
+    const buf = await file.arrayBuffer()
+    const digest = await crypto.subtle.digest('SHA-256', buf)
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  const compressForVision = async (file, maxDim = 1024, quality = 0.78) => {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
+    const w = Math.max(1, Math.round(bitmap.width * scale))
+    const h = Math.max(1, Math.round(bitmap.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h)
+    return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality))
+  }
+
+  const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result)
+    r.onerror = reject
+    r.readAsDataURL(blob)
+  })
+
+  const getRatePer1K = (model) => {
+    const m = String(model || '').toLowerCase()
+    if (m.includes('4o-mini')) return { in: 0.00015, out: 0.0006 }
+    if (m.includes('4o')) return { in: 0.0025, out: 0.01 }
+    return { in: 0.0005, out: 0.002 }
+  }
+
+  const estimateCost = (model, usage) => {
+    const rate = getRatePer1K(model)
+    const inTok = Number(usage?.prompt_tokens || 0)
+    const outTok = Number(usage?.completion_tokens || 0)
+    return (inTok / 1000) * rate.in + (outTok / 1000) * rate.out
+  }
+
   const callVisionModel = async (model, imageDataUrl) => {
     const prompt = 'Identify this Pokemon trading card. Return ONLY valid JSON with keys: card_name, set_name, card_number, rarity, confidence (0-100), alternatives (array of up to 3 strings), reasoning_short.'
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -266,46 +314,68 @@ function ScannerTab() {
     const text = json?.choices?.[0]?.message?.content || ''
     const parsed = safeJsonParse(text)
     if (!parsed) throw new Error('Model did not return parseable JSON')
-    return parsed
+    return { parsed, usage: json?.usage || {}, model }
   }
 
   const runAiIdentify = async (file) => {
     if (!file) return setAiStatus('Pick a card image first.')
     if (!aiApiKey) return setAiStatus('Add API key first.')
-    setAiStatus('AI identify running (primary model)...')
-    setAiResult(null)
-    try {
-      const imageDataUrl = await fileToDataUrl(file)
-      const primary = await callVisionModel(aiPrimaryModel, imageDataUrl)
-      const primaryConfidence = Number(primary?.confidence || 0)
-      const primaryVerified = verifyAgainstDb(primary)
+    if (spentToday >= dailyBudgetCap) return setAiStatus(`Daily cap reached ($${dailyBudgetCap}).`)
 
-      let finalResult = { ...primary, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false }
+    setAiStatus('Preparing image + checking cache...')
+    setAiResult(null)
+
+    try {
+      const scanHash = await hashFile(file)
+      const cached = scanCache[scanHash]
+      if (cached) {
+        setAiResult({ ...cached.result, cached: true })
+        setAiStatus('Cache hit: returned previous result instantly.')
+        return
+      }
+
+      const compressed = await compressForVision(file)
+      const imageDataUrl = await blobToDataUrl(compressed)
+
+      setAiStatus('AI identify running (primary model)...')
+      const primary = await callVisionModel(aiPrimaryModel, imageDataUrl)
+      const primaryConfidence = Number(primary.parsed?.confidence || 0)
+      const primaryVerified = verifyAgainstDb(primary.parsed)
+      let totalCost = estimateCost(aiPrimaryModel, primary.usage)
+
+      let finalResult = { ...primary.parsed, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false }
       const needsEscalation = primaryConfidence < Number(aiThreshold || 85) || !primaryVerified
 
       if (needsEscalation) {
         setAiStatus('Escalating to fallback model...')
         const fallback = await callVisionModel(aiFallbackModel, imageDataUrl)
-        const fallbackVerified = verifyAgainstDb(fallback)
-        finalResult = {
-          ...fallback,
-          routedModel: aiFallbackModel,
-          verifiedMatch: fallbackVerified || null,
-          escalated: true,
-          primaryCandidate: { ...primary, verified: !!primaryVerified },
-        }
+        totalCost += estimateCost(aiFallbackModel, fallback.usage)
+        const fallbackVerified = verifyAgainstDb(fallback.parsed)
+        finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified } }
       }
 
-      setAiResult(finalResult)
-      setAiStatus(
-                  `AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}).`
-      )
+      const historyEntry = {
+        ts: new Date().toISOString(),
+        hash: scanHash,
+        card: finalResult.card_name || null,
+        model: finalResult.routedModel,
+        confidence: Number(finalResult.confidence || 0),
+        escalated: !!finalResult.escalated,
+        estimatedCost: Number(totalCost.toFixed(6)),
+      }
+      setScanHistory((prev) => [historyEntry, ...prev].slice(0, 300))
+      setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
+
+      setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
+      setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: $${historyEntry.estimatedCost}`)
     } catch (e) {
-      setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
+      if (String(e.message || '').includes('HTTP 402')) setAiStatus('AI identify failed: OpenRouter credits/billing required (402).')
+      else if (String(e.message || '').includes('HTTP 429')) setAiStatus('AI identify failed: rate limited (429). Slow down/retry.')
+      else setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
     }
   }
 
-  return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify.">
+  return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify with safeguards.">
     <div className="scanner-grid">
       <div className="panel">
         <h3>Reference DB</h3>
@@ -335,6 +405,8 @@ function ScannerTab() {
         <label>Primary model<input value={aiPrimaryModel} onChange={(e) => setAiPrimaryModel(e.target.value)} /></label>
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
+        <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
+        <div className="muted">Spent today (est): $${spentToday.toFixed(4)} � Cache entries: ${Object.keys(scanCache).length}</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
@@ -342,8 +414,9 @@ function ScannerTab() {
           <div className="muted">Set: {aiResult.set_name || '-'} � No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'}</div>
           <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
-          <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}</div>
+          <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
           {aiResult.primaryCandidate ? <div className="muted">Primary candidate: {aiResult.primaryCandidate.card_name || '-'} ({aiResult.primaryCandidate.confidence || '-'}%)</div> : null}
+          <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
           {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
         </div> : null}
       </div>
