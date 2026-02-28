@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 23:18 UTC | 7e83d6ec'
+const BUILD_STAMP = 'BUILD 2026-02-28 23:23 UTC | 84afd796'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -386,21 +386,6 @@ function ScannerTab() {
 
       if (!unique.length) return { number: rawNumber, verified: !!rawNumber, reason: 'live-no-match' }
       if (rawNumber && unique.includes(rawNumber)) return { number: rawNumber, verified: true, reason: 'live-exact' }
-
-      if (rawNumber) {
-        const [lhs, rhs] = rawNumber.split('/')
-        const lhsPad = String(lhs || '').padStart(3, '0')
-        const viable = unique
-          .map((n) => {
-            const [base, den] = n.split('/')
-            const d = digitDistance(String(base).padStart(3, '0'), lhsPad)
-            const rhsOk = !rhs || den === rhs
-            return { n, d, rhsOk }
-          })
-          .filter((x) => x.rhsOk)
-          .sort((a, b) => a.d - b.d)
-      }
-
       if (rawNumber) {
         const [lhs, rhs] = rawNumber.split('/')
         const lhsPad = String(lhs || '').padStart(3, '0')
@@ -716,7 +701,7 @@ function ScannerTab() {
         const cropDataUrl = await blobToDataUrl(cropBlob)
         const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl)
         const cropRaw = String(cropRead?.card_number || '').trim()
-        const cropNum = extractSetNumber(cropRaw)
+        const cropNum = normalizeSetNumber(cropRaw) || extractSetNumber(cropRaw)
         finalResult = {
           ...finalResult,
           set_number_crop_raw: cropRaw || null,
@@ -730,8 +715,12 @@ function ScannerTab() {
         finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
       }
 
-      const resolved = await autoResolveSetNumber(finalResult)
-      finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+      if (finalResult.card_number && Number(finalResult.set_number_crop_confidence || 0) >= 85) {
+        finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'crop-authoritative', set_number_original: finalResult.set_number_before_crop || null }
+      } else {
+        const resolved = await autoResolveSetNumber(finalResult)
+        finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+      }
 
       const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
 
@@ -944,6 +933,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
