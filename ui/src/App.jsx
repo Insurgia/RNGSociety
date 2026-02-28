@@ -348,7 +348,7 @@ function ScannerTab() {
     return m ? m[1] : null
   }
 
-  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9?-??-? ]/g, ' ').replace(/s+/g, ' ').trim()
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿 ]/g, ' ').replace(/\s+/g, ' ').trim()
 
   const digitDistance = (a, b) => {
     if (!a || !b || a.length !== b.length) return 999
@@ -847,6 +847,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
