@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
+const BUILD_STAMP = 'BUILD 2026-02-28 17:52 | 845d0775'
+
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
 const round2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100
@@ -904,7 +906,7 @@ export default function App() {
     { id: 'lab', label: 'Lab' },
   ]
 
-  return <main className="app"><header className="header"><div className="logo">R</div><div><div className="eyebrow">RNG Society</div><h1>Toolkit</h1></div><button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '?? Light mode' : '?? Dark mode'}</button></header>
+  return <main className="app"><header className="header">`n        <div style={{width:"100%",background:"#22c55e",color:"#052e16",padding:"6px 10px",borderRadius:"8px",fontWeight:800,fontSize:"12px",marginBottom:"8px"}}>VERSION BADGE: {BUILD_STAMP}</div><div className="logo">R</div><div><div className="eyebrow">RNG Society</div><h1>Toolkit</h1></div><button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '?? Light mode' : '?? Dark mode'}</button></header>
     <nav className="tabs tabs5">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>
     {tab === 'singles' && <SinglesTab />}
     {tab === 'purchase' && <PurchaseTab />}
@@ -913,6 +915,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
