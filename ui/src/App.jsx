@@ -195,6 +195,7 @@ function ScannerTab() {
   const [scanCache, setScanCache] = useState({})
   const [correction, setCorrection] = useState('')
   const [telemetryDir, setTelemetryDir] = useState(null)
+  const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '')
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
@@ -204,19 +205,44 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_ai_threshold', String(aiThreshold)) }, [aiThreshold])
   useEffect(() => { localStorage.setItem('rng_lang_mode', languageMode) }, [languageMode])
   useEffect(() => { localStorage.setItem('rng_daily_budget_cap', String(dailyBudgetCap)) }, [dailyBudgetCap])
+  useEffect(() => { localStorage.setItem('rng_telemetry_webhook', telemetryWebhook) }, [telemetryWebhook])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
   const spentToday = useMemo(() => scanHistory.filter((h) => String(h.ts || '').startsWith(todayKey)).reduce((a, b) => a + Number(b.estimatedCost || 0), 0), [scanHistory, todayKey])
 
   const appendJsonl = async (name, payload) => {
-    if (!telemetryDir) return
+    if (!telemetryDir) return false
     const fileHandle = await telemetryDir.getFileHandle(name, { create: true })
     const file = await fileHandle.getFile()
     const existing = await file.text()
     const w = await fileHandle.createWritable()
     await w.write(existing + JSON.stringify(payload) + '\n')
     await w.close()
+    return true
+  }
+
+  const postWebhook = async (kind, payload) => {
+    if (!telemetryWebhook) return false
+    const res = await fetch(telemetryWebhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, payload }),
+    })
+    if (!res.ok) throw new Error(`Webhook HTTP ${res.status}`)
+    return true
+  }
+
+  const emitTelemetry = async (kind, payload, fileName) => {
+    if (telemetryDir) {
+      await appendJsonl(fileName, payload)
+      return 'filesystem'
+    }
+    if (telemetryWebhook) {
+      await postWebhook(kind, payload)
+      return 'webhook'
+    }
+    return 'none'
   }
 
   const connectTelemetryFolder = async () => {
@@ -375,7 +401,8 @@ function ScannerTab() {
     }
     setScanHistory((prev) => prev.map((h) => h.hash === aiResult.scanHash ? { ...h, verdict, correctedLabel: correctedLabel || null } : h))
     setAiResult((prev) => prev ? { ...prev, verdict, correctedLabel: correctedLabel || null } : prev)
-    if (telemetryDir) await appendJsonl('scanner-feedback.jsonl', feedback)
+    const route = await emitTelemetry('feedback', feedback, 'scanner-feedback.jsonl')
+    if (route === 'none') setTelemetryStatus('No telemetry target connected (select folder or webhook).')
     setAiStatus(`Feedback saved: ${verdict}${correctedLabel ? ' (' + correctedLabel + ')' : ''}`)
   }
 
@@ -419,7 +446,8 @@ function ScannerTab() {
       const historyEntry = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
-      if (telemetryDir) await appendJsonl('scanner-events.jsonl', historyEntry)
+      const route = await emitTelemetry('event', historyEntry, 'scanner-events.jsonl')
+      if (route === 'none') setTelemetryStatus('No telemetry target connected (select folder or webhook).')
 
       setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
       setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: $${historyEntry.estimatedCost}`)
@@ -478,6 +506,12 @@ function ScannerTab() {
         <div className="action-row">
           <button className="btn" onClick={connectTelemetryFolder}>Connect telemetry folder</button>
           <span className="muted">{telemetryStatus}</span>
+        </div>
+        <label>Telemetry webhook (mobile fallback)
+          <input value={telemetryWebhook} onChange={(e) => setTelemetryWebhook(e.target.value)} placeholder="https://your-endpoint/scanner-ingest" />
+        </label>
+        <div className="action-row">
+          <button className="btn" onClick={() => setTelemetryStatus(telemetryWebhook ? 'Webhook configured.' : 'Webhook empty.')}>Validate telemetry config</button>
         </div>
         <div className="muted">Spent today (est): ${spentToday.toFixed(4)} � Cache entries: ${Object.keys(scanCache).length}</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
@@ -595,5 +629,6 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 

@@ -38,3 +38,20 @@ npm run build
 ## Deploy
 
 See `DEPLOYMENT.md` for the dual-remote + Cloudflare workflow.
+
+## Scanner telemetry (mobile fallback)
+
+For mobile devices that cannot use direct filesystem writing, run the telemetry ingest server:
+
+```bash
+node scripts/scanner-telemetry-server.mjs
+```
+
+Then set Scanner **Telemetry webhook** to:
+
+`http://<your-host-ip>:8789/scanner-ingest`
+
+This writes scan events and feedback into:
+
+- `data/scans/scanner-events.jsonl`
+- `data/scans/scanner-feedback.jsonl`
