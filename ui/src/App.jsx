@@ -198,6 +198,7 @@ function ScannerTab() {
   const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '')
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
   const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
+  const [catalog, setCatalog] = useState([])
   const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
   const [scrapeStatus, setScrapeStatus] = useState('')
   const [scrapeData, setScrapeData] = useState(null)
@@ -213,6 +214,9 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_telemetry_webhook', telemetryWebhook) }, [telemetryWebhook])
   useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
+  useEffect(() => {
+    fetch('/pokemon-catalog.json').then((r)=>r.json()).then((j)=>setCatalog(Array.isArray(j)?j:[])).catch(()=>setCatalog([]))
+  }, [])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -348,7 +352,7 @@ function ScannerTab() {
     return m ? m[1] : null
   }
 
-  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff ]/g, ' ').replace(/\s+/g, ' ').trim()
 
   const digitDistance = (a, b) => {
     if (!a || !b || a.length !== b.length) return 999
@@ -360,7 +364,8 @@ function ScannerTab() {
   const autoResolveSetNumber = (ai) => {
     const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
     const rawNumber = extractSetNumber(ai.card_number)
-    if (!referenceDb.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-db' }
+    const source = referenceDb.length ? referenceDb.map((r)=>({ name:r.name, number: extractSetNumber(r.name), language: languageMode === 'japanese' ? 'Japanese' : 'English' })) : catalog
+    if (!source.length) return { number: rawNumber, verified: !!rawNumber, reason: 'no-catalog' }
 
     const nameNorm = normalizeName(rawName)
     const candidates = referenceDb
@@ -847,6 +852,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
