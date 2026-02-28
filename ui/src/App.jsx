@@ -462,10 +462,10 @@ function ScannerTab() {
     const ctx = canvas.getContext('2d')
     ctx.drawImage(bitmap, 0, 0)
 
-    const cw = Math.max(1, Math.round(canvas.width * 0.55))
-    const ch = Math.max(1, Math.round(canvas.height * 0.18))
-    const sx = Math.max(0, Math.round((canvas.width - cw) / 2))
-    const sy = Math.max(0, canvas.height - ch - Math.round(canvas.height * 0.03))
+    const cw = canvas.width
+    const ch = Math.max(1, Math.round(canvas.height * 0.24))
+    const sx = 0
+    const sy = Math.max(0, canvas.height - ch - Math.round(canvas.height * 0.01))
 
     const out = document.createElement('canvas')
     out.width = cw
@@ -699,6 +699,7 @@ function ScannerTab() {
       }
 
       try {
+        finalResult = { ...finalResult, set_number_crop_attempted: true }
         const cropBlob = await cropSetIdRegion(file)
         const cropDataUrl = await blobToDataUrl(cropBlob)
         const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl)
@@ -706,7 +707,9 @@ function ScannerTab() {
         if (cropNum) {
           finalResult = { ...finalResult, card_number: cropNum, set_number_crop_confidence: Number(cropRead?.confidence || 0) }
         }
-      } catch {}
+      } catch (err) {
+        finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
+      }
 
       const resolved = await autoResolveSetNumber(finalResult)
       finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
@@ -804,7 +807,8 @@ function ScannerTab() {
           <div className="muted">Native: {aiResult.card_name_native || '-'} � EN: {aiResult.card_name_english || '-'}</div>
           <div className="muted">Set native: {aiResult.set_name_native || aiResult.set_name || '-'} � Set EN: {aiResult.set_name_english || '-'}</div>
           <div className="muted">No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'} � Detected lang: {aiResult.detected_language || '-'}</div>
-          <div className="muted">Set# verify: {aiResult.set_number_verified ? '? verified' : '? unverified'} ({aiResult.set_number_resolution_reason || 'n/a'}){aiResult.set_number_original ? ` � from ${aiResult.set_number_original}` : ''}</div>
+          <div className="muted">Set# verify: {aiResult.set_number_verified ? 'verified' : 'unverified'} ({aiResult.set_number_resolution_reason || 'n/a'}){aiResult.set_number_original ? ` | from ${aiResult.set_number_original}` : ''}</div>
+          <div className="muted">Crop pass: {aiResult.set_number_crop_attempted ? 'attempted' : 'not-run'}{aiResult.set_number_crop_confidence ? ` | confidence ${aiResult.set_number_crop_confidence}%` : ''}{aiResult.set_number_crop_error ? ` | error: ${aiResult.set_number_crop_error}` : ''}</div>
           <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
@@ -915,6 +919,9 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
+
 
 
 
