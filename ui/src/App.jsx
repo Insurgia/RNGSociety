@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 11:04 AM | b14392a1'
+const BUILD_STAMP = 'BUILD 2026-03-01 11:58 AM | e1e7c65e'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -211,6 +211,7 @@ function ScannerTab({ coreMode = false }) {
   const [liveSpeed, setLiveSpeed] = useState('2x')
   const [liveItems, setLiveItems] = useState([])
   const [runningTotal, setRunningTotal] = useState(0)
+  const [lastScanMs, setLastScanMs] = useState(null)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -946,6 +947,7 @@ function ScannerTab({ coreMode = false }) {
   }
 
   const runAiIdentify = async (file) => {
+    const startedAt = performance.now()
     if (!file) return setAiStatus('Pick a card image first.')
     if (devMode && !aiApiKey) return setAiStatus('Add API key first.')
     if (spentToday >= dailyBudgetCap) return setAiStatus(`Daily cap reached ($${dailyBudgetCap}).`)
@@ -1035,7 +1037,9 @@ function ScannerTab({ coreMode = false }) {
         setScanHistory((prev) => [blockedHistory, ...prev].slice(0, 500))
         await emitTelemetry('event', blockedHistory, 'scanner-events.jsonl')
         setAiResult(finalResult)
-        setAiStatus('Scan incomplete: set number could not be auto-verified. Blocked until verified.')
+        const elapsed = Math.round(performance.now() - startedAt)
+        setLastScanMs(elapsed)
+        setAiStatus(`Scan incomplete: set number could not be auto-verified. Blocked until verified. (${elapsed} ms)` )
         return
       }
       const historyEntry = { ...baseHistory, status: 'verified' }
@@ -1046,16 +1050,19 @@ function ScannerTab({ coreMode = false }) {
       if (route === 'error') setTelemetryStatus('Telemetry sync failed, but scan result succeeded.')
 
       setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
+      const elapsed = Math.round(performance.now() - startedAt)
+      setLastScanMs(elapsed)
 
       pricingPromise.then((pricing) => {
         setAiResult((prev) => prev && prev.scanHash === scanHash ? { ...prev, pricing } : prev)
       })
       const suffix = route === 'error' ? ' (telemetry failed)' : ''
-      setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: ${historyEntry.estimatedCost}${suffix}`)
+      setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: ${historyEntry.estimatedCost}${suffix} | ${elapsed} ms`)
     } catch (e) {
       if (String(e.message || '').includes('HTTP 402')) setAiStatus('AI identify failed: OpenRouter credits/billing required (402).')
       else if (String(e.message || '').includes('HTTP 429')) setAiStatus('AI identify failed: rate limited (429). Slow down/retry.')
       else setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
+      setLastScanMs(Math.round(performance.now() - startedAt))
     }
   }
 
@@ -1109,6 +1116,7 @@ function ScannerTab({ coreMode = false }) {
           <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
+        <div className="muted">Last scan time: {lastScanMs != null ? `${lastScanMs} ms` : 'n/a'}</div>
         <div className="price-pill">Running total: {runningTotal} {aiResult?.pricing?.primary?.currency || pricingCurrency}</div>
       </section>
 
@@ -1267,6 +1275,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
