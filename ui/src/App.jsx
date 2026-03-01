@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 9:35 PM | 88fa8eca'
+const BUILD_STAMP = 'BUILD 2026-02-28 10:12 PM | b92dfa7a'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -207,6 +207,10 @@ function ScannerTab({ coreMode = false }) {
   const [scrapeStatus, setScrapeStatus] = useState('')
   const [scrapeData, setScrapeData] = useState(null)
   const [tcgScrapeData, setTcgScrapeData] = useState(null)
+  const [liveScanOn, setLiveScanOn] = useState(false)
+  const [liveSpeed, setLiveSpeed] = useState('2x')
+  const [liveItems, setLiveItems] = useState([])
+  const [runningTotal, setRunningTotal] = useState(0)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -230,6 +234,87 @@ function ScannerTab({ coreMode = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiResult?.scanHash])
 
+
+  const videoRef = React.useRef(null)
+  const streamRef = React.useRef(null)
+  const loopRef = React.useRef(null)
+  const seenHashesRef = React.useRef(new Set())
+
+  const captureLiveFrame = async () => {
+    const v = videoRef.current
+    if (!v || !v.videoWidth || !v.videoHeight) return null
+    const c = document.createElement('canvas')
+    c.width = v.videoWidth
+    c.height = v.videoHeight
+    c.getContext('2d').drawImage(v, 0, 0)
+    const blob = await new Promise((resolve) => c.toBlob((b) => resolve(b), 'image/jpeg', 0.86))
+    if (!blob) return null
+    return new File([blob], `live-${Date.now()}.jpg`, { type: 'image/jpeg' })
+  }
+
+  const startLiveScan = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setAiStatus('Camera API unavailable in this browser.')
+        return
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => {})
+      }
+      setLiveScanOn(true)
+      setAiStatus('Live scan started.')
+
+      const ms = liveSpeed === '1x' ? 1400 : liveSpeed === '3x' ? 500 : 900
+      loopRef.current = setInterval(async () => {
+        if (!videoRef.current) return
+        const file = await captureLiveFrame()
+        if (!file) return
+        const h = await hashFile(file)
+        if (seenHashesRef.current.has(h)) return
+        seenHashesRef.current.add(h)
+        await runAiIdentify(file)
+      }, ms)
+    } catch (e) {
+      setAiStatus(`Live scan failed to start: ${e?.message || 'unknown error'}`)
+    }
+  }
+
+  const stopLiveScan = () => {
+    setLiveScanOn(false)
+    if (loopRef.current) clearInterval(loopRef.current)
+    loopRef.current = null
+    if (streamRef.current) {
+      for (const t of streamRef.current.getTracks()) t.stop()
+      streamRef.current = null
+    }
+    setAiStatus('Live scan stopped.')
+  }
+
+  useEffect(() => {
+    return () => {
+      if (loopRef.current) clearInterval(loopRef.current)
+      if (streamRef.current) {
+        for (const t of streamRef.current.getTracks()) t.stop()
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!aiResult?.scanHash || !aiResult?.pricing?.primary?.value) return
+    if (liveItems.find((x) => x.scanHash === aiResult.scanHash)) return
+    const item = {
+      scanHash: aiResult.scanHash,
+      name: aiResult.card_name_english || aiResult.card_name || 'Unknown',
+      number: aiResult.card_number || '-',
+      price: Number(aiResult.pricing.primary.value || 0),
+      currency: aiResult.pricing.primary.currency || 'USD',
+    }
+    setLiveItems((prev) => [item, ...prev].slice(0, 200))
+    setRunningTotal((prev) => Number((prev + item.price).toFixed(2)))
+  }, [aiResult])
 
   const todayKey = new Date().toISOString().slice(0, 10)
   const spentToday = useMemo(() => scanHistory.filter((h) => String(h.ts || '').startsWith(todayKey)).reduce((a, b) => a + Number(b.estimatedCost || 0), 0), [scanHistory, todayKey])
@@ -933,16 +1018,25 @@ function ScannerTab({ coreMode = false }) {
       <section className="scan-capture">
         <div className="scan-kicker">Step 1</div>
         <h3>Capture card</h3>
-        <p className="muted">Upload a card image to identify, verify set number, and fetch pricing.</p>
+        <p className="muted">Start live scan and sweep camera across cards on table. Auto-detect + running total.</p>
+        <div className="live-cam-wrap">
+          <video ref={videoRef} className="live-cam" playsInline muted autoPlay />
+          <div className="cam-overlay">
+            <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
+          </div>
+        </div>
         <label className="capture-drop">
           <input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} />
-          <span>Tap to choose image</span>
+          <span>Manual upload fallback</span>
         </label>
         <div className="action-row">
+          <button className="btn" onClick={startLiveScan} disabled={liveScanOn}>Start scan</button>
+          <button className="btn" onClick={stopLiveScan} disabled={!liveScanOn}>Stop</button>
+          <select value={liveSpeed} onChange={(e) => setLiveSpeed(e.target.value)} style={{maxWidth:90}}><option value="1x">1x</option><option value="2x">2x</option><option value="3x">3x</option></select>
           <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
-          <button className="btn" onClick={() => { setAiResult(null); setAiStatus('Ready for next scan.') }}>Clear result</button>
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
+        <div className="price-pill">Running total: {runningTotal} {aiResult?.pricing?.primary?.currency || pricingCurrency}</div>
       </section>
 
       <section className="scan-result panel">
@@ -974,11 +1068,11 @@ function ScannerTab({ coreMode = false }) {
     <section className="scan-history panel" style={{ marginTop: 12 }}>
       <div className="lab-head"><h3>Recent scans</h3><span className="muted">{scanHistory.length} entries</span></div>
       <div className="history-row">
-        {scanHistory.slice(0, 10).map((h, i) => <button key={h.hash + i} className="history-chip" onClick={() => setAiStatus(`Selected ${h.card || 'scan'} (${h.card_number || '-'})`)}>
-          <strong>{h.card || 'Unknown'}</strong>
-          <small>{h.card_number || '-'} | {h.status || 'n/a'}</small>
+        {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-chip">
+          <strong>{h.name}</strong>
+          <small>{h.number} | {h.price} {h.currency}</small>
         </button>)}
-        {!scanHistory.length ? <span className="muted">No scans yet.</span> : null}
+        {!liveItems.length ? <span className="muted">No live detections yet.</span> : null}
       </div>
     </section>
   </Card>
@@ -1100,6 +1194,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
