@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 8:30 PM | fe4b7c4c'
+const BUILD_STAMP = 'BUILD 2026-02-28 8:36 PM | eb149cce'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -202,6 +202,7 @@ function ScannerTab() {
   const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
   const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
   const [rapidApiKey, setRapidApiKey] = useState(() => localStorage.getItem('rng_rapidapi_key') || '')
+  const [pricingCurrency, setPricingCurrency] = useState(() => localStorage.getItem('rng_pricing_currency') || 'EUR')
   const [scrapeStatus, setScrapeStatus] = useState('')
   const [scrapeData, setScrapeData] = useState(null)
   const [tcgScrapeData, setTcgScrapeData] = useState(null)
@@ -217,6 +218,7 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
   useEffect(() => { localStorage.setItem('rng_rapidapi_key', rapidApiKey) }, [rapidApiKey])
+  useEffect(() => { localStorage.setItem('rng_pricing_currency', pricingCurrency) }, [pricingCurrency])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -585,6 +587,21 @@ function ScannerTab() {
 
 
 
+  const convertCurrency = async (amount, from, to) => {
+    if (!Number.isFinite(amount)) return null
+    if (!to || from === to) return { value: Number(amount.toFixed(2)), currency: from, rate: 1 }
+    try {
+      const res = await fetch(`https://api.frankfurter.app/latest?amount=${amount}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      if (!res.ok) throw new Error(`FX HTTP ${res.status}`)
+      const json = await res.json()
+      const val = Number(json?.rates?.[to])
+      if (!Number.isFinite(val)) return null
+      return { value: Number(val.toFixed(2)), currency: to, rate: Number((val / amount).toFixed(6)) }
+    } catch {
+      return null
+    }
+  }
+
   const fetchCardmarketPrimaryPrice = async (ai) => {
     if (!rapidApiKey) throw new Error('Missing RapidAPI key')
 
@@ -647,6 +664,7 @@ function ScannerTab() {
       source: 'cardmarket-api-tcg',
       currency: prices.currency || 'EUR',
       value: Number(value.toFixed(2)),
+      baseCurrency: prices.currency || 'EUR',
       fetchedAt: new Date().toISOString(),
       cardmarketId: candidate.cardmarket_id || null,
       tcgid: candidate.tcgid || null,
@@ -668,8 +686,10 @@ function ScannerTab() {
     setScrapeStatus('Fetching Cardmarket primary price...')
     try {
       const cm = await fetchCardmarketPrimaryPrice(aiResult)
-      setAiResult((prev) => prev ? { ...prev, pricing: { ...(prev.pricing || {}), primary: cm, final: cm.value, reason: 'cardmarket_primary' } } : prev)
-      setScrapeStatus(`Cardmarket price fetched: ${cm.value} ${cm.currency}`)
+      const fx = await convertCurrency(cm.value, cm.baseCurrency || cm.currency || 'EUR', pricingCurrency)
+      const primary = fx ? { ...cm, value: fx.value, currency: fx.currency, fxRate: fx.rate, convertedFrom: cm.baseCurrency || cm.currency || 'EUR' } : cm
+      setAiResult((prev) => prev ? { ...prev, pricing: { ...(prev.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' } } : prev)
+      setScrapeStatus(`Cardmarket price fetched: ${primary.value} ${primary.currency}${fx ? ` (from ${cm.value} ${cm.baseCurrency || cm.currency || 'EUR'})` : ''}`)
     } catch (e) {
       setAiResult((prev) => prev ? { ...prev, pricing: { ...(prev.pricing || {}), reason: 'cardmarket_error', error: String(e?.message || e) } } : prev)
       setScrapeStatus(`Cardmarket fetch failed: ${e?.message || 'unknown error'}`)
@@ -894,6 +914,15 @@ function ScannerTab() {
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
         <label>RapidAPI key (Cardmarket)<input type="password" value={rapidApiKey} onChange={(e) => setRapidApiKey(e.target.value)} placeholder="rapidapi key" /></label>
+        <label>Pricing currency
+          <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)}>
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+            <option value="CAD">CAD</option>
+            <option value="GBP">GBP</option>
+            <option value="JPY">JPY</option>
+          </select>
+        </label>
         <label>Pricing mode
           <select value={pricingMode} onChange={(e) => setPricingMode(e.target.value)}>
             <option value="none">None</option>
@@ -1035,6 +1064,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
