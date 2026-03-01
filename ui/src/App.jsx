@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 9:29 PM | e51629cc'
+const BUILD_STAMP = 'BUILD 2026-02-28 9:35 PM | 88fa8eca'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -220,6 +220,15 @@ function ScannerTab({ coreMode = false }) {
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
   useEffect(() => { localStorage.setItem('rng_rapidapi_key', rapidApiKey) }, [rapidApiKey])
   useEffect(() => { localStorage.setItem('rng_pricing_currency', pricingCurrency) }, [pricingCurrency])
+
+  // Safety net: if scan is verified but pricing is missing, fetch it in-band.
+  useEffect(() => {
+    if (!aiResult) return
+    if (!aiResult.set_number_verified) return
+    if (aiResult?.pricing?.primary || aiResult?.pricing?.reason === 'cardmarket_error') return
+    runCardmarketPrimary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiResult?.scanHash])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -949,7 +958,7 @@ function ScannerTab({ coreMode = false }) {
             <div><span>Set verify</span><strong>{aiResult.set_number_verified ? 'Verified' : 'Unverified'}</strong></div>
           </div>
           {aiResult?.pricing?.primary ? <div className="price-pill">{aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} <small>via {aiResult.pricing.primary.source}</small></div> : null}
-          {aiResult?.pricing?.reason ? <div className="muted">Pricing: {aiResult.pricing.reason}</div> : null}
+          {aiResult?.pricing?.reason ? <div className="muted">Pricing: {aiResult.pricing.reason}{aiResult?.pricing?.error ? ` (${aiResult.pricing.error})` : ''}</div> : null}
           <div className="action-row" style={{ marginTop: 10 }}>
             <button className="btn" onClick={() => submitFeedback('correct')}>Correct</button>
             <button className="btn" onClick={() => submitFeedback('incorrect')}>Incorrect</button>
@@ -1091,6 +1100,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
