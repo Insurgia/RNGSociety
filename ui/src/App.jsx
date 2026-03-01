@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 9:08 PM | 7a751bd7'
+const BUILD_STAMP = 'BUILD 2026-02-28 9:16 PM | 7eb6eff5'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -178,7 +178,7 @@ function safeJsonParse(text) {
   }
 }
 
-function ScannerTab() {
+function ScannerTab({ coreMode = false }) {
   const devMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dev') === '1'
   const [referenceDb, setReferenceDb] = useState(() => { try { return JSON.parse(localStorage.getItem(DB_KEY) || '[]') } catch { return [] } })
   const [dbStatus, setDbStatus] = useState('Ready.')
@@ -885,7 +885,7 @@ function ScannerTab() {
 
   return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify with safeguards + feedback.">
     <div className="scanner-grid">
-      <div className="panel">
+{coreMode ? <>      <div className="panel">
         <h3>Reference DB</h3>
         <label>Upload card image folder<input type="file" multiple accept="image/*" onChange={(e) => buildDb(e.target.files)} /></label>
         <div className="action-row"><button className="btn" onClick={() => { setReferenceDb([]); setDbStatus('Reference DB cleared.') }}>Clear DB</button></div>
@@ -914,6 +914,8 @@ function ScannerTab() {
         <textarea rows={6} value={ocrText} onChange={(e) => setOcrText(e.target.value)} placeholder="OCR output appears here..." />
       </div>
 
+</> : null}
+
       <div className="panel">
         <h3>AI Identify (Vision)</h3>
         {devMode ? <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label> : <div className="muted">AI API config: managed</div>}
@@ -924,10 +926,12 @@ function ScannerTab() {
             <option value="japanese">Japanese</option>
           </select>
         </label>
+{coreMode ? <>
         <label>Primary model<input value={aiPrimaryModel} onChange={(e) => setAiPrimaryModel(e.target.value)} /></label>
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
+        </> : null}
         {devMode ? <label>RapidAPI key (Cardmarket)<input type="password" value={rapidApiKey} onChange={(e) => setRapidApiKey(e.target.value)} placeholder="rapidapi key" /></label> : <div className="muted">Pricing API config: managed</div>}
         <label>Pricing currency
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)}>
@@ -995,7 +999,7 @@ function ToolPreview({ target }) {
   if (target === 'singles') return <SinglesTab />
   if (target === 'purchase') return <PurchaseTab />
   if (target === 'bags') return <BagBuilderTab />
-  if (target === 'scanner') return <ScannerTab />
+  if (target === 'scanner') return <ScannerTab coreMode />
   return <Card title="Test Bench" description="No in-app preview mapped yet."><p className="muted">This module has no preview yet.</p></Card>
 }
 
@@ -1077,7 +1081,7 @@ export default function App() {
         <div className="logo">R</div>
         <div>
           <div className="eyebrow">RNG Society</div>
-          <h1>Scanner Suite</h1>
+          <h1>Toolkit</h1>
         </div>
       </div>
       <div className="top-actions">
@@ -1088,7 +1092,7 @@ export default function App() {
 
     <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>
 
-    <section className="hero-strip">
+    {tab === 'scanner' ? <section className="hero-strip">
       <div>
         <div className="hero-title">Built for fast reseller flow</div>
         <div className="muted">Capture ? verify set ID ? price ? commit. No config headaches for end users.</div>
@@ -1097,7 +1101,7 @@ export default function App() {
         <span className="status-pill stable">Cardmarket primary</span>
         <span className="status-pill review">AI verify enabled</span>
       </div>
-    </section>
+    </section> : null}
 
     {tab === 'singles' && <SinglesTab />}
     {tab === 'purchase' && <PurchaseTab />}
@@ -1106,6 +1110,8 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
 
 
 
