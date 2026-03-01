@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 11:01 PM | 0af52146'
+const BUILD_STAMP = 'BUILD 2026-02-28 11:08 PM | 2be12cf0'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -242,7 +242,30 @@ function ScannerTab({ coreMode = false }) {
   const seenCardKeysRef = React.useRef(new Map())
   const liveBusyRef = React.useRef(false)
 
+  const ensureCameraReady = async () => {
+    try {
+      if (streamRef.current && videoRef.current?.srcObject) return true
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setAiStatus('Camera API unavailable in this browser.')
+        return false
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => {})
+      }
+      setAiStatus('Camera ready.')
+      return true
+    } catch (e) {
+      setAiStatus(`Camera permission/error: ${e?.message || 'unable to access camera'}`)
+      return false
+    }
+  }
+
   const captureLiveFrame = async () => {
+    const ok = await ensureCameraReady()
+    if (!ok) return null
     const v = videoRef.current
     if (!v || !v.videoWidth || !v.videoHeight) return null
     const c = document.createElement('canvas')
@@ -1069,6 +1092,7 @@ function ScannerTab({ coreMode = false }) {
         <div className="action-row">
           <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
+          <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
           <button className="btn" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>Tap to capture + scan</button>
           <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
         </div>
@@ -1231,6 +1255,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
