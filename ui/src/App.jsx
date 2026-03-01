@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 9:26 PM | 4de9c9e8'
+const BUILD_STAMP = 'BUILD 2026-02-28 9:29 PM | e51629cc'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -856,6 +856,16 @@ function ScannerTab({ coreMode = false }) {
         finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
       }
 
+      // Auto-fetch primary pricing after set verification succeeds
+      try {
+        const cm = await fetchCardmarketPrimaryPrice(finalResult)
+        const fx = await convertCurrency(cm.value, cm.baseCurrency || cm.currency || 'EUR', pricingCurrency)
+        const primary = fx ? { ...cm, value: fx.value, currency: fx.currency, fxRate: fx.rate, convertedFrom: cm.baseCurrency || cm.currency || 'EUR' } : cm
+        finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' } }
+      } catch (priceErr) {
+        finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), reason: 'cardmarket_error', error: String(priceErr?.message || priceErr) } }
+      }
+
       const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
 
       if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
@@ -1081,6 +1091,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
