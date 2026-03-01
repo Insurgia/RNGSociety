@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 2:39 PM | 087f8345'
+const BUILD_STAMP = 'BUILD 2026-03-01 2:44 PM | 5eaf6fe5'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -1027,7 +1027,7 @@ function ScannerTab({ coreMode = false }) {
       const tVerifyStart = performance.now()
       const hasStructuredNumber = !!(finalResult.card_number && String(finalResult.card_number).includes('/'))
       const strongPass = Number(finalResult.confidence || 0) >= Math.max(85, Number(aiThreshold || 85))
-      const requiresStrictVerify = !hasStructuredNumber || !strongPass
+      const requiresStrictVerify = true
 
       if (requiresStrictVerify) {
         try {
@@ -1056,8 +1056,6 @@ function ScannerTab({ coreMode = false }) {
           const resolved = await autoResolveSetNumber(finalResult)
           finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
         }
-      } else {
-        finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'fastpath-ai-structured' }
       }
 
       const verifyMs = Math.round(performance.now() - tVerifyStart)
@@ -1337,6 +1335,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
