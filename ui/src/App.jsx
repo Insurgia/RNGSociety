@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 12:04 PM | 1ed1cd81'
+const BUILD_STAMP = 'BUILD 2026-03-01 1:14 PM | 62c9d1c3'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -774,8 +774,14 @@ function ScannerTab({ coreMode = false }) {
       if (proxyRes.ok) {
         const pj = await proxyRes.json()
         if (pj?.ok && pj?.data?.value) return pj.data
+        throw new Error('Cardmarket proxy returned no price data')
       }
-    } catch {}
+      const detail = await proxyRes.text().catch(() => '')
+      throw new Error(`Cardmarket proxy HTTP ${proxyRes.status}${detail ? ` - ${detail.slice(0, 220)}` : ''}`)
+    } catch (proxyErr) {
+      // In production, never silently fall back to client key flow.
+      if (!devMode) throw proxyErr
+    }
 
     // Dev fallback only (direct RapidAPI from browser)
     if (!rapidApiKey) throw new Error('Cardmarket proxy unavailable and no dev RapidAPI key configured')
@@ -1290,6 +1296,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
