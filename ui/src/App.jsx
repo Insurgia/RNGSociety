@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 7:23 PM | 2e61a617'
+const BUILD_STAMP = 'BUILD 2026-02-28 8:06 PM | e7508402'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -201,6 +201,7 @@ function ScannerTab() {
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
   const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
   const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
+  const [rapidApiKey, setRapidApiKey] = useState(() => localStorage.getItem('rng_rapidapi_key') || '')
   const [scrapeStatus, setScrapeStatus] = useState('')
   const [scrapeData, setScrapeData] = useState(null)
   const [tcgScrapeData, setTcgScrapeData] = useState(null)
@@ -215,6 +216,7 @@ function ScannerTab() {
   useEffect(() => { localStorage.setItem('rng_telemetry_webhook', telemetryWebhook) }, [telemetryWebhook])
   useEffect(() => { localStorage.setItem('rng_store_images', storeImages ? '1' : '0') }, [storeImages])
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
+  useEffect(() => { localStorage.setItem('rng_rapidapi_key', rapidApiKey) }, [rapidApiKey])
 
 
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -582,6 +584,60 @@ function ScannerTab() {
   }
 
 
+
+  const fetchCardmarketPrimaryPrice = async (ai) => {
+    if (!rapidApiKey) throw new Error('Missing RapidAPI key')
+    const setName = String(ai.set_name_english || ai.set_name_native || ai.set_name || '').toLowerCase().trim()
+    const cardNum = String(ai.card_number || '').trim()
+    const headers = {
+      'x-rapidapi-host': 'cardmarket-api-tcg.p.rapidapi.com',
+      'x-rapidapi-key': rapidApiKey,
+    }
+
+    const epRes = await fetch('https://cardmarket-api-tcg.p.rapidapi.com/pokemon/episodes', { headers })
+    if (!epRes.ok) throw new Error(`Cardmarket episodes HTTP ${epRes.status}`)
+    const epJson = await epRes.json()
+    const episodes = Array.isArray(epJson?.data) ? epJson.data : []
+    const episode = episodes.find((e) => String(e.name || '').toLowerCase() === setName)
+      || episodes.find((e) => String(e.name || '').toLowerCase().includes(setName) || setName.includes(String(e.name || '').toLowerCase()))
+    if (!episode?.id) throw new Error('Set not found in Cardmarket episodes')
+
+    const cardsRes = await fetch(`https://cardmarket-api-tcg.p.rapidapi.com/pokemon/episodes/${episode.id}/cards?sort=price_highest`, { headers })
+    if (!cardsRes.ok) throw new Error(`Cardmarket cards HTTP ${cardsRes.status}`)
+    const cardsJson = await cardsRes.json()
+    const cards = Array.isArray(cardsJson?.data) ? cardsJson.data : []
+
+    const exact = cards.find((c) => String(c.card_number || '').trim() === cardNum)
+    const candidate = exact || cards.find((c) => String(c.name || '').toLowerCase().includes(String(ai.card_name || '').toLowerCase()))
+    if (!candidate) throw new Error('Card not found in Cardmarket set list')
+
+    const prices = candidate?.prices?.cardmarket || {}
+    const value = Number(prices.avg30 || prices.avg7 || prices.trend || prices.lowest_near_mint || prices.sell || prices.average || 0)
+    if (!Number.isFinite(value) || value <= 0) throw new Error('No usable Cardmarket price value')
+
+    return {
+      source: 'cardmarket-api-tcg',
+      currency: prices.currency || 'EUR',
+      value: Number(value.toFixed(2)),
+      fetchedAt: new Date().toISOString(),
+      cardmarketId: candidate.cardmarket_id || null,
+      episodeId: episode.id,
+    }
+  }
+
+  const runCardmarketPrimary = async () => {
+    if (!aiResult) return
+    setScrapeStatus('Fetching Cardmarket primary price...')
+    try {
+      const cm = await fetchCardmarketPrimaryPrice(aiResult)
+      setAiResult((prev) => prev ? { ...prev, pricing: { ...(prev.pricing || {}), primary: cm, final: cm.value, reason: 'cardmarket_primary' } } : prev)
+      setScrapeStatus(`Cardmarket price fetched: ${cm.value} ${cm.currency}`)
+    } catch (e) {
+      setAiResult((prev) => prev ? { ...prev, pricing: { ...(prev.pricing || {}), reason: 'cardmarket_error', error: String(e?.message || e) } } : prev)
+      setScrapeStatus(`Cardmarket fetch failed: ${e?.message || 'unknown error'}`)
+    }
+  }
+
   const runExperimentalHybridScrape = async () => {
     if (!aiResult) return
     setScrapeStatus('Scraping eBay + TCG...')
@@ -799,9 +855,11 @@ function ScannerTab() {
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
+        <label>RapidAPI key (Cardmarket)<input type="password" value={rapidApiKey} onChange={(e) => setRapidApiKey(e.target.value)} placeholder="rapidapi key" /></label>
         <label>Pricing mode
           <select value={pricingMode} onChange={(e) => setPricingMode(e.target.value)}>
             <option value="none">None</option>
+            <option value="cardmarket_primary">Cardmarket (primary)</option>
             <option value="experimental_scrape">Experimental eBay scrape (dev only)</option>
             <option value="experimental_scrape_hybrid">Experimental TCG+eBay hybrid (dev only)</option>
           </select>
@@ -833,6 +891,7 @@ function ScannerTab() {
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
           <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
           {aiResult.verifiedMatch ? <div className="muted">DB verify: {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
+          {pricingMode === 'cardmarket_primary' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runCardmarketPrimary}>Fetch Cardmarket primary price</button></div><div className="muted">{scrapeStatus}</div>{aiResult?.pricing?.primary ? <div className="muted">Cardmarket primary: ${aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} · source: {aiResult.pricing.primary.source}</div> : null}{aiResult?.pricing?.reason ? <div className="muted">Pricing status: {aiResult.pricing.reason}</div> : null}</div> : null}
           {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">Current market (weighted latest 5): ${scrapeData.currentMarket} - Recent avg: ${scrapeData.recentAverage} - Recent median: ${scrapeData.recentMedian} - Global median: ${scrapeData.globalMedian} - samples: {scrapeData.sample}</div> : null}</div> : null}
           {pricingMode === 'experimental_scrape_hybrid' ? <div className="lab-create"><div className="muted">DEV ONLY - Experimental scraping</div><div className="action-row"><button className="btn" onClick={runExperimentalHybridScrape}>Fetch Hybrid TCG+eBay (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay current: ${scrapeData.currentMarket} - samples: {scrapeData.sample}</div> : null}{tcgScrapeData ? <div className="muted">TCG current: ${tcgScrapeData.currentMarket} - samples: {tcgScrapeData.sample}</div> : null}{aiResult?.pricing?.blendedCurrent ? <div className="muted"><strong>Blended current: ${aiResult.pricing.blendedCurrent}</strong></div> : null}</div> : null}
 
@@ -938,6 +997,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
