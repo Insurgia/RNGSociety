@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 11:58 AM | e1e7c65e'
+const BUILD_STAMP = 'BUILD 2026-03-01 12:04 PM | 1ed1cd81'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -212,6 +212,7 @@ function ScannerTab({ coreMode = false }) {
   const [liveItems, setLiveItems] = useState([])
   const [runningTotal, setRunningTotal] = useState(0)
   const [lastScanMs, setLastScanMs] = useState(null)
+  const [scanTimers, setScanTimers] = useState({ firstPassMs: null, verifyMs: null, priceMs: null })
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -948,6 +949,7 @@ function ScannerTab({ coreMode = false }) {
 
   const runAiIdentify = async (file) => {
     const startedAt = performance.now()
+    setScanTimers({ firstPassMs: null, verifyMs: null, priceMs: null })
     if (!file) return setAiStatus('Pick a card image first.')
     if (devMode && !aiApiKey) return setAiStatus('Add API key first.')
     if (spentToday >= dailyBudgetCap) return setAiStatus(`Daily cap reached ($${dailyBudgetCap}).`)
@@ -969,6 +971,7 @@ function ScannerTab({ coreMode = false }) {
       const compressedB64 = await blobToDataUrl(compressed)
 
       setAiStatus('AI identify running (primary model)...')
+      const tFirstStart = performance.now()
       const primary = await callVisionModel(aiPrimaryModel, imageDataUrl)
       const primaryConfidence = Number(primary.parsed?.confidence || 0)
       const primaryVerified = verifyAgainstDb(primary.parsed)
@@ -985,10 +988,14 @@ function ScannerTab({ coreMode = false }) {
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
 
+      const firstPassMs = Math.round(performance.now() - tFirstStart)
+      setScanTimers((t) => ({ ...t, firstPassMs }))
+
       // Instant-first render: show initial identify result immediately while enrichment continues
       setAiResult({ ...finalResult, estimatedCost: Number(totalCost.toFixed(6)), cached: false, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } })
       setAiStatus('Card detected. Enriching verification + price...')
 
+      const tVerifyStart = performance.now()
       try {
         finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
         const cropBlob = await cropSetIdRegion(file)
@@ -1016,14 +1023,21 @@ function ScannerTab({ coreMode = false }) {
         finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
       }
 
+      const verifyMs = Math.round(performance.now() - tVerifyStart)
+      setScanTimers((t) => ({ ...t, verifyMs }))
+
       // Non-blocking pricing fetch for faster UX
       const pricingPromise = (async () => {
+        const tPriceStart = performance.now()
         try {
           const cm = await fetchCardmarketPrimaryPrice(finalResult)
           const fx = await convertCurrency(cm.value, cm.baseCurrency || cm.currency || 'EUR', pricingCurrency)
           const primary = fx ? { ...cm, value: fx.value, currency: fx.currency, fxRate: fx.rate, convertedFrom: cm.baseCurrency || cm.currency || 'EUR' } : cm
-          return { ...(finalResult.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' }
+          const out = { ...(finalResult.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' }
+          setScanTimers((t) => ({ ...t, priceMs: Math.round(performance.now() - tPriceStart) }))
+          return out
         } catch (priceErr) {
+          setScanTimers((t) => ({ ...t, priceMs: Math.round(performance.now() - tPriceStart) }))
           return { ...(finalResult.pricing || {}), reason: 'cardmarket_error', error: String(priceErr?.message || priceErr) }
         }
       })()
@@ -1117,6 +1131,7 @@ function ScannerTab({ coreMode = false }) {
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
         <div className="muted">Last scan time: {lastScanMs != null ? `${lastScanMs} ms` : 'n/a'}</div>
+        <div className="muted">Pass 1 (identify): {scanTimers.firstPassMs != null ? `${scanTimers.firstPassMs} ms` : 'n/a'} | Verify: {scanTimers.verifyMs != null ? `${scanTimers.verifyMs} ms` : 'n/a'} | Price: {scanTimers.priceMs != null ? `${scanTimers.priceMs} ms` : 'n/a'}</div>
         <div className="price-pill">Running total: {runningTotal} {aiResult?.pricing?.primary?.currency || pricingCurrency}</div>
       </section>
 
@@ -1275,6 +1290,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
