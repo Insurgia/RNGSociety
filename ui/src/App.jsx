@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 8:13 PM | 8e20a7f4'
+const BUILD_STAMP = 'BUILD 2026-02-28 8:30 PM | fe4b7c4c'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -587,54 +587,57 @@ function ScannerTab() {
 
   const fetchCardmarketPrimaryPrice = async (ai) => {
     if (!rapidApiKey) throw new Error('Missing RapidAPI key')
-    const setName = String(ai.set_name_english || ai.set_name_native || ai.set_name || '').toLowerCase().trim()
+
+    const cardName = String(ai.card_name_english || ai.card_name_native || ai.card_name || '').trim()
     const cardNum = String(ai.card_number || '').trim()
-    const cardName = String(ai.card_name_english || ai.card_name_native || ai.card_name || '').toLowerCase().trim()
+    const setName = String(ai.set_name_english || ai.set_name_native || ai.set_name || '').trim().toLowerCase()
     const headers = {
       'x-rapidapi-host': 'cardmarket-api-tcg.p.rapidapi.com',
       'x-rapidapi-key': rapidApiKey,
     }
 
-    const epRes = await fetch('https://cardmarket-api-tcg.p.rapidapi.com/pokemon/episodes', { headers })
-    if (!epRes.ok) throw new Error(`Cardmarket episodes HTTP ${epRes.status}`)
-    const epJson = await epRes.json()
-    const episodes = Array.isArray(epJson?.data) ? epJson.data : []
-
-    const setEpisode = episodes.find((e) => String(e.name || '').toLowerCase() === setName)
-      || episodes.find((e) => String(e.name || '').toLowerCase().includes(setName) || setName.includes(String(e.name || '').toLowerCase()))
-
-    const episodePool = setEpisode ? [setEpisode, ...episodes.filter((e) => e.id !== setEpisode.id).slice(0, 8)] : episodes.slice(0, 10)
-
-    const allCards = []
-    for (const ep of episodePool) {
-      try {
-        const cardsRes = await fetch(`https://cardmarket-api-tcg.p.rapidapi.com/pokemon/episodes/${ep.id}/cards?sort=price_highest`, { headers })
-        if (!cardsRes.ok) continue
-        const cardsJson = await cardsRes.json()
-        const cards = Array.isArray(cardsJson?.data) ? cardsJson.data : []
-        for (const c of cards) allCards.push({ ...c, _episodeId: ep.id, _episodeName: ep.name })
-      } catch {}
+    const buildUrl = (name, number) => {
+      const q = new URLSearchParams()
+      if (name) q.set('name', name)
+      if (number) q.set('card_number', number)
+      q.set('sort', 'relevance')
+      q.set('page', '1')
+      return `https://cardmarket-api-tcg.p.rapidapi.com/pokemon/cards/search?${q.toString()}`
     }
 
-    if (!allCards.length) throw new Error('No cards returned from Cardmarket')
+    const fetchSearch = async (name, number) => {
+      const res = await fetch(buildUrl(name, number), { headers })
+      if (!res.ok) throw new Error(`Cardmarket search HTTP ${res.status}`)
+      const json = await res.json()
+      return Array.isArray(json?.data) ? json.data : []
+    }
 
-    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()
+    let cards = await fetchSearch(cardName, cardNum)
+    if (!cards.length && cardName) cards = await fetchSearch(cardName, '')
+    if (!cards.length) throw new Error('No cards returned from Cardmarket search')
+
+    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+    const nameN = norm(cardName)
     const numBase = cardNum.split('/')[0]
 
-    const scored = allCards.map((c) => {
+    const scored = cards.map((c) => {
       let score = 0
-      const n = norm(c.name)
-      const cn = norm(cardName)
-      const cnum = String(c.card_number || '').trim()
-      if (cn && (n.includes(cn) || cn.includes(n))) score += 60
-      if (cardNum && cnum === cardNum) score += 40
-      if (numBase && String(cnum).split('/')[0] === numBase) score += 20
-      if (setName && norm(c._episodeName).includes(norm(setName))) score += 25
+      const cName = norm(c.name)
+      const cNum = String(c.card_number ?? '').trim()
+      const epName = norm(c?.episode?.name || '')
+
+      if (nameN && (cName === nameN)) score += 70
+      else if (nameN && (cName.includes(nameN) || nameN.includes(cName))) score += 50
+
+      if (cardNum && cNum === cardNum) score += 40
+      if (numBase && String(cNum).split('/')[0] === numBase) score += 20
+      if (setName && epName.includes(norm(setName))) score += 25
+
       return { ...c, _score: score }
-    }).sort((a,b)=>b._score-a._score)
+    }).sort((a, b) => b._score - a._score)
 
     const candidate = scored[0]
-    if (!candidate || candidate._score < 40) throw new Error('No confident Cardmarket match')
+    if (!candidate || candidate._score < 35) throw new Error('No confident Cardmarket match')
 
     const prices = candidate?.prices?.cardmarket || {}
     const value = Number(prices.avg30 || prices.avg7 || prices.trend || prices.lowest_near_mint || prices.sell || prices.average || 0)
@@ -646,12 +649,17 @@ function ScannerTab() {
       value: Number(value.toFixed(2)),
       fetchedAt: new Date().toISOString(),
       cardmarketId: candidate.cardmarket_id || null,
-      episodeId: candidate._episodeId,
+      tcgid: candidate.tcgid || null,
       confidence: candidate._score,
       matchedName: candidate.name || null,
       matchedNumber: candidate.card_number || null,
-      matchedEpisode: candidate._episodeName || null,
-      topCandidates: scored.slice(0,3).map((x)=>({name:x.name, number:x.card_number, episode:x._episodeName, score:x._score})),
+      matchedEpisode: candidate?.episode?.name || null,
+      topCandidates: scored.slice(0, 3).map((x) => ({
+        name: x.name,
+        number: x.card_number,
+        episode: x?.episode?.name,
+        score: x._score,
+      })),
     }
   }
 
@@ -905,7 +913,7 @@ function ScannerTab() {
         <div className="action-row">
           <button className="btn" onClick={validateTelemetryWebhook}>Validate telemetry (real POST)</button>
         </div>
-        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} · Cache entries: ${Object.keys(scanCache).length} · Resolver: live_pkmncards</div>
+        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} ï¿½ Cache entries: ${Object.keys(scanCache).length} ï¿½ Resolver: live_pkmncards</div>
         <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
         <p className="muted">{aiStatus}</p>
         {aiResult ? <div className="ai-result">
@@ -921,7 +929,7 @@ function ScannerTab() {
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
           <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
           {aiResult.verifiedMatch ? <div className="muted">DB verify: {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
-          {pricingMode === 'cardmarket_primary' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runCardmarketPrimary}>Fetch Cardmarket primary price</button></div><div className="muted">{scrapeStatus}</div>{aiResult?.pricing?.primary ? <div className="muted">Cardmarket primary: ${aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} · source: {aiResult.pricing.primary.source} · confidence: {aiResult.pricing.primary.confidence}</div> : null}{aiResult?.pricing?.reason ? <div className="muted">Pricing status: {aiResult.pricing.reason}</div> : null}{aiResult?.pricing?.primary?.matchedName ? <div className="muted">Matched: {aiResult.pricing.primary.matchedName} ({aiResult.pricing.primary.matchedNumber}) · {aiResult.pricing.primary.matchedEpisode}</div> : null}</div> : null}
+          {pricingMode === 'cardmarket_primary' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runCardmarketPrimary}>Fetch Cardmarket primary price</button></div><div className="muted">{scrapeStatus}</div>{aiResult?.pricing?.primary ? <div className="muted">Cardmarket primary: ${aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} ï¿½ source: {aiResult.pricing.primary.source} ï¿½ confidence: {aiResult.pricing.primary.confidence}</div> : null}{aiResult?.pricing?.reason ? <div className="muted">Pricing status: {aiResult.pricing.reason}</div> : null}{aiResult?.pricing?.primary?.matchedName ? <div className="muted">Matched: {aiResult.pricing.primary.matchedName} ({aiResult.pricing.primary.matchedNumber}) ï¿½ {aiResult.pricing.primary.matchedEpisode}</div> : null}</div> : null}
           {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">Current market (weighted latest 5): ${scrapeData.currentMarket} - Recent avg: ${scrapeData.recentAverage} - Recent median: ${scrapeData.recentMedian} - Global median: ${scrapeData.globalMedian} - samples: {scrapeData.sample}</div> : null}</div> : null}
           {pricingMode === 'experimental_scrape_hybrid' ? <div className="lab-create"><div className="muted">DEV ONLY - Experimental scraping</div><div className="action-row"><button className="btn" onClick={runExperimentalHybridScrape}>Fetch Hybrid TCG+eBay (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay current: ${scrapeData.currentMarket} - samples: {scrapeData.sample}</div> : null}{tcgScrapeData ? <div className="muted">TCG current: ${tcgScrapeData.currentMarket} - samples: {tcgScrapeData.sample}</div> : null}{aiResult?.pricing?.blendedCurrent ? <div className="muted"><strong>Blended current: ${aiResult.pricing.blendedCurrent}</strong></div> : null}</div> : null}
 
@@ -1027,6 +1035,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
