@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 9:16 PM | 7eb6eff5'
+const BUILD_STAMP = 'BUILD 2026-02-28 9:26 PM | 4de9c9e8'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -883,116 +883,87 @@ function ScannerTab({ coreMode = false }) {
     }
   }
 
-  return <Card title="Scanner Core" description="Hybrid scanner: OCR + DB matching + AI identify with safeguards + feedback.">
-    <div className="scanner-grid">
-{coreMode ? <>      <div className="panel">
-        <h3>Reference DB</h3>
-        <label>Upload card image folder<input type="file" multiple accept="image/*" onChange={(e) => buildDb(e.target.files)} /></label>
-        <div className="action-row"><button className="btn" onClick={() => { setReferenceDb([]); setDbStatus('Reference DB cleared.') }}>Clear DB</button></div>
-        <p className="muted">{dbStatus}</p>
-        <p className="muted">Indexed cards: {referenceDb.length}</p>
+  if (coreMode) {
+    return <Card title="Scanner Core" description="Deep diagnostics + tuning for scanner internals.">
+      <div className="scanner-grid">
+        <div className="panel">
+          <h3>Reference DB</h3>
+          <label>Upload card image folder<input type="file" multiple accept="image/*" onChange={(e) => buildDb(e.target.files)} /></label>
+          <div className="action-row"><button className="btn" onClick={() => { setReferenceDb([]); setDbStatus('Reference DB cleared.') }}>Clear DB</button></div>
+          <p className="muted">{dbStatus}</p>
+          <p className="muted">Indexed cards: {referenceDb.length}</p>
+        </div>
+        <div className="panel">
+          <h3>Database Match Test</h3>
+          <label>Query image<input type="file" accept="image/*" onChange={(e) => runMatch(e.target.files?.[0])} /></label>
+          <p className="muted">{matchStatus}</p>
+          <div className="match-results">{results.map((m) => <div key={m.id} className="result-row"><img src={m.previewUrl} alt={m.name} /><div><strong>{m.name}</strong><div className="muted">Confidence {m.confidence}%</div></div></div>)}</div>
+        </div>
+        <div className="panel">
+          <h3>OCR Test</h3>
+          <label>OCR image<input type="file" accept="image/*" onChange={(e) => runOcr(e.target.files?.[0])} /></label>
+          <p className="muted">{ocrStatus}</p>
+          <textarea rows={6} value={ocrText} onChange={(e) => setOcrText(e.target.value)} />
+        </div>
       </div>
+    </Card>
+  }
 
-      <div className="panel">
-        <h3>Database Match Test</h3>
-        <label>Query card image<input type="file" accept="image/*" onChange={(e) => runMatch(e.target.files?.[0])} /></label>
-        <p className="muted">{matchStatus}</p>
-        <div className="match-results">{results.map((m) => <div key={m.id} className="result-row"><img src={m.previewUrl} alt={m.name} /><div><strong>{m.name}</strong><div className="muted">Confidence {m.confidence}% � d={m.distance}</div></div></div>)}</div>
-      </div>
-
-      <div className="panel">
-        <h3>OCR Test</h3>
-        <label>OCR language mode
-          <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)}>
-            <option value="auto">Auto</option>
-            <option value="english">English</option>
-            <option value="japanese">Japanese</option>
-          </select>
-        </label>
-        <label>Card image for OCR<input type="file" accept="image/*" onChange={(e) => runOcr(e.target.files?.[0])} /></label>
-        <p className="muted">{ocrStatus}</p>
-        <textarea rows={6} value={ocrText} onChange={(e) => setOcrText(e.target.value)} placeholder="OCR output appears here..." />
-      </div>
-
-</> : null}
-
-      <div className="panel">
-        <h3>AI Identify (Vision)</h3>
-        {devMode ? <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label> : <div className="muted">AI API config: managed</div>}
-        <label>Language mode
-          <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)}>
-            <option value="auto">Auto</option>
-            <option value="english">English</option>
-            <option value="japanese">Japanese</option>
-          </select>
-        </label>
-{coreMode ? <>
-        <label>Primary model<input value={aiPrimaryModel} onChange={(e) => setAiPrimaryModel(e.target.value)} /></label>
-        <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
-        <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
-        <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
-        </> : null}
-        {devMode ? <label>RapidAPI key (Cardmarket)<input type="password" value={rapidApiKey} onChange={(e) => setRapidApiKey(e.target.value)} placeholder="rapidapi key" /></label> : <div className="muted">Pricing API config: managed</div>}
-        <label>Pricing currency
-          <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)}>
-            <option value="EUR">EUR</option>
-            <option value="USD">USD</option>
-            <option value="CAD">CAD</option>
-            <option value="GBP">GBP</option>
-            <option value="JPY">JPY</option>
-          </select>
-        </label>
-        <label>Pricing mode
-          <select value={pricingMode} onChange={(e) => setPricingMode(e.target.value)}>
-            <option value="none">None</option>
-            <option value="cardmarket_primary">Cardmarket (primary)</option>
-            <option value="experimental_scrape">Experimental eBay scrape (dev only)</option>
-            <option value="experimental_scrape_hybrid">Experimental TCG+eBay hybrid (dev only)</option>
-          </select>
+  return <Card title="Scanner" description="Capture-first reseller scanner flow.">
+    <div className="scan-shell">
+      <section className="scan-capture">
+        <div className="scan-kicker">Step 1</div>
+        <h3>Capture card</h3>
+        <p className="muted">Upload a card image to identify, verify set number, and fetch pricing.</p>
+        <label className="capture-drop">
+          <input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} />
+          <span>Tap to choose image</span>
         </label>
         <div className="action-row">
-          <button className="btn" onClick={connectTelemetryFolder}>Connect telemetry folder</button>
-          <span className="muted">{telemetryStatus}</span>
+          <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
+          <button className="btn" onClick={() => { setAiResult(null); setAiStatus('Ready for next scan.') }}>Clear result</button>
         </div>
-        <label><input type="checkbox" checked={storeImages} onChange={(e) => setStoreImages(e.target.checked)} /> Store compressed scan images for future training</label>
-        {devMode ? <label>Telemetry webhook (mobile fallback)
-          <input value={telemetryWebhook} onChange={(e) => setTelemetryWebhook(e.target.value)} placeholder="https://your-endpoint/scanner-ingest" />
-        </label> : <div className="muted">Telemetry endpoint: managed</div>}
-        <div className="action-row">
-          <button className="btn" onClick={validateTelemetryWebhook}>Validate telemetry (real POST)</button>
-        </div>
-        <div className="muted">Spent today (est): ${spentToday.toFixed(4)} � Cache entries: ${Object.keys(scanCache).length} � Resolver: live_pkmncards</div>
-        <label>Card image for AI identify<input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /></label>
-        <p className="muted">{aiStatus}</p>
-        {aiResult ? <div className="ai-result">
-          <div><strong>{aiResult.card_name_native || aiResult.card_name || 'Unknown card'}</strong></div>
-          <div className="muted">Native: {aiResult.card_name_native || '-'} � EN: {aiResult.card_name_english || '-'}</div>
-          <div className="muted">Set native: {aiResult.set_name_native || aiResult.set_name || '-'} � Set EN: {aiResult.set_name_english || '-'}</div>
-          <div className="muted">No: {aiResult.card_number || '-'} � Rarity: {aiResult.rarity || '-'} � Detected lang: {aiResult.detected_language || '-'}</div>
-          <div className="muted">Set# verify: {aiResult.set_number_verified ? 'verified' : 'unverified'} ({aiResult.set_number_resolution_reason || 'n/a'}){aiResult.set_number_original ? ` | from ${aiResult.set_number_original}` : ''}</div>
-          <div className="muted">Crop pass: {aiResult.set_number_crop_attempted ? 'attempted' : 'not-run'}{aiResult.set_number_crop_confidence ? ` | confidence ${aiResult.set_number_crop_confidence}%` : ''}{aiResult.set_number_crop_error ? ` | error: ${aiResult.set_number_crop_error}` : ''}</div>
-          <div className="muted">Crop read: {aiResult.set_number_crop_raw || 'none'}{aiResult.set_number_before_crop ? ` | before: ${aiResult.set_number_before_crop}` : ''}{aiResult.set_number_crop_image_bytes ? ` | bytes: ${aiResult.set_number_crop_image_bytes}` : ''}</div>
-          <div className="muted">AI confidence: {aiResult.confidence ?? '-'}%</div>
-          {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
-          <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
-          <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
-          {aiResult.verifiedMatch ? <div className="muted">DB verify: {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
-          {pricingMode === 'cardmarket_primary' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runCardmarketPrimary}>Fetch Cardmarket primary price</button></div><div className="muted">{scrapeStatus}</div>{aiResult?.pricing?.primary ? <div className="muted">Cardmarket primary: ${aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} � source: {aiResult.pricing.primary.source} � confidence: {aiResult.pricing.primary.confidence}</div> : null}{aiResult?.pricing?.reason ? <div className="muted">Pricing status: {aiResult.pricing.reason}</div> : null}{aiResult?.pricing?.primary?.matchedName ? <div className="muted">Matched: {aiResult.pricing.primary.matchedName} ({aiResult.pricing.primary.matchedNumber}) � {aiResult.pricing.primary.matchedEpisode}</div> : null}</div> : null}
-          {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">Current market (weighted latest 5): ${scrapeData.currentMarket} - Recent avg: ${scrapeData.recentAverage} - Recent median: ${scrapeData.recentMedian} - Global median: ${scrapeData.globalMedian} - samples: {scrapeData.sample}</div> : null}</div> : null}
-          {pricingMode === 'experimental_scrape_hybrid' ? <div className="lab-create"><div className="muted">DEV ONLY - Experimental scraping</div><div className="action-row"><button className="btn" onClick={runExperimentalHybridScrape}>Fetch Hybrid TCG+eBay (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay current: ${scrapeData.currentMarket} - samples: {scrapeData.sample}</div> : null}{tcgScrapeData ? <div className="muted">TCG current: ${tcgScrapeData.currentMarket} - samples: {tcgScrapeData.sample}</div> : null}{aiResult?.pricing?.blendedCurrent ? <div className="muted"><strong>Blended current: ${aiResult.pricing.blendedCurrent}</strong></div> : null}</div> : null}
+        <div className="muted">{aiStatus || 'Ready.'}</div>
+      </section>
 
+      <section className="scan-result panel">
+        <div className="scan-kicker">Step 2</div>
+        <h3>Verify + price</h3>
+        {!aiResult ? <p className="muted">No result yet. Run a scan to populate this card.</p> : <>
+          <div className="result-title">{aiResult.card_name_native || aiResult.card_name || 'Unknown card'}</div>
+          <div className="muted">EN: {aiResult.card_name_english || '-'}</div>
+          <div className="result-grid">
+            <div><span>Set</span><strong>{aiResult.set_name_english || aiResult.set_name || '-'}</strong></div>
+            <div><span>No.</span><strong>{aiResult.card_number || '-'}</strong></div>
+            <div><span>Confidence</span><strong>{aiResult.confidence ?? '-'}%</strong></div>
+            <div><span>Set verify</span><strong>{aiResult.set_number_verified ? 'Verified' : 'Unverified'}</strong></div>
+          </div>
+          {aiResult?.pricing?.primary ? <div className="price-pill">{aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} <small>via {aiResult.pricing.primary.source}</small></div> : null}
+          {aiResult?.pricing?.reason ? <div className="muted">Pricing: {aiResult.pricing.reason}</div> : null}
           <div className="action-row" style={{ marginTop: 10 }}>
             <button className="btn" onClick={() => submitFeedback('correct')}>Correct</button>
             <button className="btn" onClick={() => submitFeedback('incorrect')}>Incorrect</button>
+            <button className="btn" onClick={() => submitFeedback('corrected', correction)} disabled={!correction.trim()}>Save correction</button>
           </div>
-          <label style={{ marginTop: 8 }}>Corrected label (optional)
-            <input value={correction} onChange={(e) => setCorrection(e.target.value)} placeholder="e.g., Charizard ex 134/108 JP" />
+          <label style={{ marginTop: 8 }}>Corrected label
+            <input value={correction} onChange={(e) => setCorrection(e.target.value)} placeholder="Charizard ex 134/108 JP" />
           </label>
-          <button className="btn" style={{ marginTop: 8 }} onClick={() => submitFeedback('corrected', correction)}>Save corrected label</button>
-        </div> : null}
-      </div>
+        </>}
+      </section>
     </div>
+
+    <section className="scan-history panel" style={{ marginTop: 12 }}>
+      <div className="lab-head"><h3>Recent scans</h3><span className="muted">{scanHistory.length} entries</span></div>
+      <div className="history-row">
+        {scanHistory.slice(0, 10).map((h, i) => <button key={h.hash + i} className="history-chip" onClick={() => setAiStatus(`Selected ${h.card || 'scan'} (${h.card_number || '-'})`)}>
+          <strong>{h.card || 'Unknown'}</strong>
+          <small>{h.card_number || '-'} | {h.status || 'n/a'}</small>
+        </button>)}
+        {!scanHistory.length ? <span className="muted">No scans yet.</span> : null}
+      </div>
+    </section>
   </Card>
+
 }
 
 function ToolPreview({ target }) {
@@ -1110,6 +1081,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
