@@ -34,9 +34,27 @@ export async function onRequestPost(context) {
       return Array.isArray(json?.data) ? json.data : []
     }
 
-    let cards = await fetchSearch(cardName, cardNum)
-    if (!cards.length && cardName) cards = await fetchSearch(cardName, '')
-    if (!cards.length) throw new Error('No cards returned from Cardmarket search')
+    const sanitizeName = (n) => String(n || '').replace(/\s+/g, ' ').trim()
+    const baseName = sanitizeName(cardName)
+    const strippedName = sanitizeName(baseName.replace(/\b(ex|vmax|vstar|gx|lv\.?x|radiant)\b/gi, ''))
+    const firstToken = sanitizeName(baseName.split(' ')[0] || '')
+
+    const variants = [
+      { name: baseName, number: cardNum },
+      { name: baseName, number: '' },
+      { name: strippedName, number: cardNum },
+      { name: strippedName, number: '' },
+      { name: firstToken, number: cardNum },
+      { name: firstToken, number: '' },
+    ].filter((v, i, arr) => v.name && arr.findIndex((x) => x.name === v.name && x.number === v.number) === i)
+
+    let cards = []
+    for (const v of variants) {
+      cards = await fetchSearch(v.name, v.number)
+      if (cards.length) break
+    }
+
+    if (!cards.length) throw new Error(`No cards returned from Cardmarket search (name=${baseName || 'n/a'}, number=${cardNum || 'n/a'})`)
 
     const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
     const nameN = norm(cardName)
