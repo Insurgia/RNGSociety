@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 00:15 UTC | 45db9648'
+const BUILD_STAMP = 'BUILD 2026-02-28 7:23 PM | 2e61a617'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -346,8 +346,13 @@ function ScannerTab() {
   }
 
   const extractSetNumber = (text) => {
-    const m = String(text || '').match(/(\\d{1,3}\/\\d{2,3})/)
+    const m = String(text || '').match(/(\d{1,3}\/\d{2,3})/)
     return m ? m[1] : null
+  }
+
+  const normalizeSetNumber = (text) => {
+    const m = String(text || '').match(/(\d{1,3})\s*\/\s*(\d{2,3})/)
+    return m ? `${m[1]}/${m[2]}` : null
   }
 
   const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff ]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -827,18 +832,18 @@ function ScannerTab() {
           {aiResult.alternatives?.length ? <div className="muted">Alternatives: {aiResult.alternatives.join(', ')}</div> : null}
           <div className="muted">Routed model: {aiResult.routedModel}{aiResult.escalated ? ' (escalated)' : ''}{aiResult.cached ? ' (cache)' : ''}</div>
           <div className="muted">Estimated cost: $${Number(aiResult.estimatedCost || 0).toFixed(6)}</div>
-          {aiResult.verifiedMatch ? <div className="muted">DB verify: ? {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
-          {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">Current market (weighted latest 5): ${scrapeData.currentMarket} � Recent avg: ${scrapeData.recentAverage} � Recent median: ${scrapeData.recentMedian} � Global median: ${scrapeData.globalMedian} � samples: {scrapeData.sample}</div> : null}</div> : null}
-          {pricingMode === 'experimental_scrape_hybrid' ? <div className="lab-create"><div className="muted">?? DEV ONLY � Experimental scraping</div><div className="action-row"><button className="btn" onClick={runExperimentalHybridScrape}>Fetch Hybrid TCG+eBay (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay current: ${scrapeData.currentMarket} � samples: {scrapeData.sample}</div> : null}{tcgScrapeData ? <div className="muted">TCG current: ${tcgScrapeData.currentMarket} � samples: {tcgScrapeData.sample}</div> : null}{aiResult?.pricing?.blendedCurrent ? <div className="muted"><strong>Blended current: ${aiResult.pricing.blendedCurrent}</strong></div> : null}</div> : null}
+          {aiResult.verifiedMatch ? <div className="muted">DB verify: {aiResult.verifiedMatch.name}</div> : <div className="muted">DB verify: not matched</div>}
+          {pricingMode === 'experimental_scrape' ? <div className="lab-create"><div className="action-row"><button className="btn" onClick={runExperimentalEbayScrape}>Fetch eBay sold comps (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">Current market (weighted latest 5): ${scrapeData.currentMarket} - Recent avg: ${scrapeData.recentAverage} - Recent median: ${scrapeData.recentMedian} - Global median: ${scrapeData.globalMedian} - samples: {scrapeData.sample}</div> : null}</div> : null}
+          {pricingMode === 'experimental_scrape_hybrid' ? <div className="lab-create"><div className="muted">DEV ONLY - Experimental scraping</div><div className="action-row"><button className="btn" onClick={runExperimentalHybridScrape}>Fetch Hybrid TCG+eBay (experimental)</button></div><div className="muted">{scrapeStatus}</div>{scrapeData ? <div className="muted">eBay current: ${scrapeData.currentMarket} - samples: {scrapeData.sample}</div> : null}{tcgScrapeData ? <div className="muted">TCG current: ${tcgScrapeData.currentMarket} - samples: {tcgScrapeData.sample}</div> : null}{aiResult?.pricing?.blendedCurrent ? <div className="muted"><strong>Blended current: ${aiResult.pricing.blendedCurrent}</strong></div> : null}</div> : null}
 
           <div className="action-row" style={{ marginTop: 10 }}>
-            <button className="btn" onClick={() => submitFeedback('correct')}>? Correct</button>
-            <button className="btn" onClick={() => submitFeedback('incorrect')}>? Incorrect</button>
+            <button className="btn" onClick={() => submitFeedback('correct')}>Correct</button>
+            <button className="btn" onClick={() => submitFeedback('incorrect')}>Incorrect</button>
           </div>
           <label style={{ marginTop: 8 }}>Corrected label (optional)
             <input value={correction} onChange={(e) => setCorrection(e.target.value)} placeholder="e.g., Charizard ex 134/108 JP" />
           </label>
-          <button className="btn" style={{ marginTop: 8 }} onClick={() => submitFeedback('corrected', correction)}>?? Save corrected label</button>
+          <button className="btn" style={{ marginTop: 8 }} onClick={() => submitFeedback('corrected', correction)}>Save corrected label</button>
         </div> : null}
       </div>
     </div>
@@ -924,7 +929,7 @@ export default function App() {
     { id: 'lab', label: 'Lab' },
   ]
 
-  return <main className="app"><header className="header">`n        <div style={{width:"100%",background:"#22c55e",color:"#052e16",padding:"6px 10px",borderRadius:"8px",fontWeight:800,fontSize:"12px",marginBottom:"8px"}}>VERSION BADGE: {BUILD_STAMP}</div><div className="logo">R</div><div><div className="eyebrow">RNG Society</div><h1>Toolkit</h1></div><button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '?? Light mode' : '?? Dark mode'}</button></header>
+  return <main className="app"><header className="header"><div style={{width:"100%",background:"#22c55e",color:"#052e16",padding:"6px 10px",borderRadius:"8px",fontWeight:800,fontSize:"12px",marginBottom:"8px"}}>VERSION BADGE: {BUILD_STAMP}</div><div className="logo">R</div><div><div className="eyebrow">RNG Society</div><h1>Toolkit</h1></div><button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button></header>
     <nav className="tabs tabs5">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>
     {tab === 'singles' && <SinglesTab />}
     {tab === 'purchase' && <PurchaseTab />}
@@ -933,6 +938,8 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
 
 
 
