@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 11:08 PM | 2be12cf0'
+const BUILD_STAMP = 'BUILD 2026-03-01 11:04 AM | b14392a1'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -973,7 +973,7 @@ function ScannerTab({ coreMode = false }) {
       let totalCost = estimateCost(aiPrimaryModel, primary.usage)
 
       let finalResult = { ...primary.parsed, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false, scanHash }
-      const needsEscalation = primaryConfidence < Number(aiThreshold || 85) || !primaryVerified
+      const needsEscalation = primaryConfidence < Number(aiThreshold || 85)
 
       if (needsEscalation) {
         setAiStatus('Escalating to fallback model...')
@@ -982,6 +982,10 @@ function ScannerTab({ coreMode = false }) {
         const fallbackVerified = verifyAgainstDb(fallback.parsed)
         finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
       }
+
+      // Instant-first render: show initial identify result immediately while enrichment continues
+      setAiResult({ ...finalResult, estimatedCost: Number(totalCost.toFixed(6)), cached: false, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } })
+      setAiStatus('Card detected. Enriching verification + price...')
 
       try {
         finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
@@ -1010,15 +1014,19 @@ function ScannerTab({ coreMode = false }) {
         finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
       }
 
-      // Auto-fetch primary pricing after set verification succeeds
-      try {
-        const cm = await fetchCardmarketPrimaryPrice(finalResult)
-        const fx = await convertCurrency(cm.value, cm.baseCurrency || cm.currency || 'EUR', pricingCurrency)
-        const primary = fx ? { ...cm, value: fx.value, currency: fx.currency, fxRate: fx.rate, convertedFrom: cm.baseCurrency || cm.currency || 'EUR' } : cm
-        finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' } }
-      } catch (priceErr) {
-        finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), reason: 'cardmarket_error', error: String(priceErr?.message || priceErr) } }
-      }
+      // Non-blocking pricing fetch for faster UX
+      const pricingPromise = (async () => {
+        try {
+          const cm = await fetchCardmarketPrimaryPrice(finalResult)
+          const fx = await convertCurrency(cm.value, cm.baseCurrency || cm.currency || 'EUR', pricingCurrency)
+          const primary = fx ? { ...cm, value: fx.value, currency: fx.currency, fxRate: fx.rate, convertedFrom: cm.baseCurrency || cm.currency || 'EUR' } : cm
+          return { ...(finalResult.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' }
+        } catch (priceErr) {
+          return { ...(finalResult.pricing || {}), reason: 'cardmarket_error', error: String(priceErr?.message || priceErr) }
+        }
+      })()
+
+      finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } }
 
       const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
 
@@ -1038,6 +1046,10 @@ function ScannerTab({ coreMode = false }) {
       if (route === 'error') setTelemetryStatus('Telemetry sync failed, but scan result succeeded.')
 
       setAiResult({ ...finalResult, estimatedCost: historyEntry.estimatedCost, cached: false })
+
+      pricingPromise.then((pricing) => {
+        setAiResult((prev) => prev && prev.scanHash === scanHash ? { ...prev, pricing } : prev)
+      })
       const suffix = route === 'error' ? ' (telemetry failed)' : ''
       setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: ${historyEntry.estimatedCost}${suffix}`)
     } catch (e) {
@@ -1255,6 +1267,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
