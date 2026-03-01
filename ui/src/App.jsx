@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 10:58 PM | 936ca313'
+const BUILD_STAMP = 'BUILD 2026-02-28 11:01 PM | 0af52146'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -255,6 +255,8 @@ function ScannerTab({ coreMode = false }) {
   }
 
   const startLiveScan = async () => {
+    setAiStatus('Live auto-scan is disabled in this build.')
+    return
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         setAiStatus('Camera API unavailable in this browser.')
@@ -291,6 +293,8 @@ function ScannerTab({ coreMode = false }) {
   }
 
   const stopLiveScan = () => {
+    setAiStatus('Live auto-scan is disabled in this build.')
+
     setLiveScanOn(false)
     if (loopRef.current) clearInterval(loopRef.current)
     loopRef.current = null
@@ -1051,7 +1055,7 @@ function ScannerTab({ coreMode = false }) {
       <section className="scan-capture">
         <div className="scan-kicker">Step 1</div>
         <h3>Capture card</h3>
-        <p className="muted">Start live scan and sweep camera across cards on table. Auto-detect + running total.</p>
+        <p className="muted">Tap the capture button to scan one card at a time (RareCandy style).</p>
         <div className="live-cam-wrap">
           <video ref={videoRef} className="live-cam" playsInline muted autoPlay />
           <div className="cam-overlay">
@@ -1065,9 +1069,7 @@ function ScannerTab({ coreMode = false }) {
         <div className="action-row">
           <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
-          <button className="btn" onClick={startLiveScan} disabled={liveScanOn}>Start scan</button>
-          <button className="btn" onClick={stopLiveScan} disabled={!liveScanOn}>Stop</button>
-          <select value={liveSpeed} onChange={(e) => setLiveSpeed(e.target.value)} style={{maxWidth:90}}><option value="1x">1x</option><option value="2x">2x</option><option value="3x">3x</option></select>
+          <button className="btn" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>Tap to capture + scan</button>
           <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
@@ -1229,6 +1231,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
