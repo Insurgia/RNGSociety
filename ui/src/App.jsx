@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 10:35 PM | 697cb8a5'
+const BUILD_STAMP = 'BUILD 2026-02-28 10:58 PM | 936ca313'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -239,6 +239,8 @@ function ScannerTab({ coreMode = false }) {
   const streamRef = React.useRef(null)
   const loopRef = React.useRef(null)
   const seenHashesRef = React.useRef(new Set())
+  const seenCardKeysRef = React.useRef(new Map())
+  const liveBusyRef = React.useRef(false)
 
   const captureLiveFrame = async () => {
     const v = videoRef.current
@@ -269,13 +271,19 @@ function ScannerTab({ coreMode = false }) {
 
       const ms = liveSpeed === '1x' ? 1400 : liveSpeed === '3x' ? 500 : 900
       loopRef.current = setInterval(async () => {
-        if (!videoRef.current) return
-        const file = await captureLiveFrame()
-        if (!file) return
-        const h = await hashFile(file)
-        if (seenHashesRef.current.has(h)) return
-        seenHashesRef.current.add(h)
-        await runAiIdentify(file)
+        try {
+          if (!videoRef.current) return
+          if (liveBusyRef.current) return
+          liveBusyRef.current = true
+          const file = await captureLiveFrame()
+          if (!file) return
+          const h = await hashFile(file)
+          if (seenHashesRef.current.has(h)) return
+          seenHashesRef.current.add(h)
+          await runAiIdentify(file)
+        } finally {
+          liveBusyRef.current = false
+        }
       }, ms)
     } catch (e) {
       setAiStatus(`Live scan failed to start: ${e?.message || 'unknown error'}`)
@@ -304,11 +312,20 @@ function ScannerTab({ coreMode = false }) {
 
   useEffect(() => {
     if (!aiResult?.scanHash || !aiResult?.pricing?.primary?.value) return
-    if (liveItems.find((x) => x.scanHash === aiResult.scanHash)) return
+    const name = String(aiResult.card_name_english || aiResult.card_name || 'Unknown').toLowerCase().trim()
+    const num = String(aiResult.card_number || '-').toLowerCase().trim()
+    const setn = String(aiResult.set_name_english || aiResult.set_name || '-').toLowerCase().trim()
+    const key = `${name}|${num}|${setn}`
+    const now = Date.now()
+    const last = Number(seenCardKeysRef.current.get(key) || 0)
+    if (now - last < 15000) return
+    seenCardKeysRef.current.set(key, now)
+
     const item = {
       scanHash: aiResult.scanHash,
       name: aiResult.card_name_english || aiResult.card_name || 'Unknown',
       number: aiResult.card_number || '-',
+      set: aiResult.set_name_english || aiResult.set_name || '-',
       price: Number(aiResult.pricing.primary.value || 0),
       currency: aiResult.pricing.primary.currency || 'USD',
     }
@@ -1046,6 +1063,8 @@ function ScannerTab({ coreMode = false }) {
           <span>Manual upload fallback</span>
         </label>
         <div className="action-row">
+          <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
+          <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
           <button className="btn" onClick={startLiveScan} disabled={liveScanOn}>Start scan</button>
           <button className="btn" onClick={stopLiveScan} disabled={!liveScanOn}>Stop</button>
           <select value={liveSpeed} onChange={(e) => setLiveSpeed(e.target.value)} style={{maxWidth:90}}><option value="1x">1x</option><option value="2x">2x</option><option value="3x">3x</option></select>
@@ -1086,7 +1105,7 @@ function ScannerTab({ coreMode = false }) {
       <div className="history-row">
         {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-chip">
           <strong>{h.name}</strong>
-          <small>{h.number} | {h.price} {h.currency}</small>
+          <small>{h.number} | {h.set} | {h.price} {h.currency}</small>
         </button>)}
         {!liveItems.length ? <span className="muted">No live detections yet.</span> : null}
       </div>
@@ -1210,6 +1229,9 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
+
 
 
 
