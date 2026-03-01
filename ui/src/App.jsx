@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 8:36 PM | eb149cce'
+const BUILD_STAMP = 'BUILD 2026-02-28 8:54 PM | 634f0a3d'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -179,6 +179,7 @@ function safeJsonParse(text) {
 }
 
 function ScannerTab() {
+  const devMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dev') === '1'
   const [referenceDb, setReferenceDb] = useState(() => { try { return JSON.parse(localStorage.getItem(DB_KEY) || '[]') } catch { return [] } })
   const [dbStatus, setDbStatus] = useState('Ready.')
   const [matchStatus, setMatchStatus] = useState('')
@@ -197,7 +198,7 @@ function ScannerTab() {
   const [scanCache, setScanCache] = useState({})
   const [correction, setCorrection] = useState('')
   const [telemetryDir, setTelemetryDir] = useState(null)
-  const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '')
+  const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '/api/telemetry/ingest')
   const [telemetryStatus, setTelemetryStatus] = useState('Telemetry not connected')
   const [storeImages, setStoreImages] = useState(() => localStorage.getItem('rng_store_images') === '1')
   const [pricingMode, setPricingMode] = useState(() => localStorage.getItem('rng_pricing_mode') || 'none')
@@ -603,11 +604,25 @@ function ScannerTab() {
   }
 
   const fetchCardmarketPrimaryPrice = async (ai) => {
-    if (!rapidApiKey) throw new Error('Missing RapidAPI key')
-
     const cardName = String(ai.card_name_english || ai.card_name_native || ai.card_name || '').trim()
     const cardNum = String(ai.card_number || '').trim()
     const setName = String(ai.set_name_english || ai.set_name_native || ai.set_name || '').trim().toLowerCase()
+
+    // Production path: server-side proxy keeps secrets out of client
+    try {
+      const proxyRes = await fetch('/api/cardmarket/price', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cardName, cardNum, setName }),
+      })
+      if (proxyRes.ok) {
+        const pj = await proxyRes.json()
+        if (pj?.ok && pj?.data?.value) return pj.data
+      }
+    } catch {}
+
+    // Dev fallback only (direct RapidAPI from browser)
+    if (!rapidApiKey) throw new Error('Cardmarket proxy unavailable and no dev RapidAPI key configured')
     const headers = {
       'x-rapidapi-host': 'cardmarket-api-tcg.p.rapidapi.com',
       'x-rapidapi-key': rapidApiKey,
@@ -901,7 +916,7 @@ function ScannerTab() {
 
       <div className="panel">
         <h3>AI Identify (Vision)</h3>
-        <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label>
+        {devMode ? <label>OpenRouter API key<input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-or-v1-..." /></label> : <div className="muted">AI API config: managed</div>}
         <label>Language mode
           <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)}>
             <option value="auto">Auto</option>
@@ -913,7 +928,7 @@ function ScannerTab() {
         <label>Fallback model<input value={aiFallbackModel} onChange={(e) => setAiFallbackModel(e.target.value)} /></label>
         <label>Escalate below confidence %<input type="number" min="0" max="100" value={aiThreshold} onChange={(e) => setAiThreshold(Number(e.target.value || 0))} /></label>
         <label>Daily budget cap (USD)<input type="number" min="0" step="0.1" value={dailyBudgetCap} onChange={(e) => setDailyBudgetCap(Number(e.target.value || 0))} /></label>
-        <label>RapidAPI key (Cardmarket)<input type="password" value={rapidApiKey} onChange={(e) => setRapidApiKey(e.target.value)} placeholder="rapidapi key" /></label>
+        {devMode ? <label>RapidAPI key (Cardmarket)<input type="password" value={rapidApiKey} onChange={(e) => setRapidApiKey(e.target.value)} placeholder="rapidapi key" /></label> : <div className="muted">Pricing API config: managed</div>}
         <label>Pricing currency
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)}>
             <option value="EUR">EUR</option>
@@ -936,9 +951,9 @@ function ScannerTab() {
           <span className="muted">{telemetryStatus}</span>
         </div>
         <label><input type="checkbox" checked={storeImages} onChange={(e) => setStoreImages(e.target.checked)} /> Store compressed scan images for future training</label>
-        <label>Telemetry webhook (mobile fallback)
+        {devMode ? <label>Telemetry webhook (mobile fallback)
           <input value={telemetryWebhook} onChange={(e) => setTelemetryWebhook(e.target.value)} placeholder="https://your-endpoint/scanner-ingest" />
-        </label>
+        </label> : <div className="muted">Telemetry endpoint: managed</div>}
         <div className="action-row">
           <button className="btn" onClick={validateTelemetryWebhook}>Validate telemetry (real POST)</button>
         </div>
@@ -1064,6 +1079,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
