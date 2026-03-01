@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 23:23 UTC | 84afd796'
+const BUILD_STAMP = 'BUILD 2026-03-01 00:15 UTC | 45db9648'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -699,7 +699,7 @@ function ScannerTab() {
         finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
         const cropBlob = await cropSetIdRegion(file)
         const cropDataUrl = await blobToDataUrl(cropBlob)
-        const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl)
+        const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl) || {}
         const cropRaw = String(cropRead?.card_number || '').trim()
         const cropNum = normalizeSetNumber(cropRaw) || extractSetNumber(cropRaw)
         finalResult = {
@@ -933,6 +933,8 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
 
 
 
