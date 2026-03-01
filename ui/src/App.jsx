@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 10:16 PM | 683c6297'
+const BUILD_STAMP = 'BUILD 2026-02-28 10:35 PM | 697cb8a5'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -592,7 +592,11 @@ function ScannerTab({ coreMode = false }) {
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
       }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) {
+      let detail = ''
+      try { detail = await res.text() } catch {}
+      throw new Error(`HTTP ${res.status}${detail ? ` - ${detail.slice(0, 220)}` : ''}`)
+    }
     const json = await res.json()
     const parsed = safeJsonParse(json?.choices?.[0]?.message?.content || '')
     return parsed || null
@@ -635,7 +639,11 @@ function ScannerTab({ coreMode = false }) {
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
       }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) {
+      let detail = ''
+      try { detail = await res.text() } catch {}
+      throw new Error(`HTTP ${res.status}${detail ? ` - ${detail.slice(0, 220)}` : ''}`)
+    }
     const json = await res.json()
     const text = json?.choices?.[0]?.message?.content || ''
     const parsed = safeJsonParse(text)
@@ -1202,6 +1210,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
