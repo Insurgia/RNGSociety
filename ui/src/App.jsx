@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-02-28 10:12 PM | b92dfa7a'
+const BUILD_STAMP = 'BUILD 2026-02-28 10:16 PM | 683c6297'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -579,9 +579,13 @@ function ScannerTab({ coreMode = false }) {
 
   const callVisionSetId = async (model, imageDataUrl) => {
     const prompt = 'Read only the card set number from this cropped image. Return ONLY JSON: {"card_number":"###/###","confidence":0-100}'
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const endpoint = devMode && aiApiKey ? 'https://openrouter.ai/api/v1/chat/completions' : '/api/vision/chat'
+    const headers = devMode && aiApiKey
+      ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + aiApiKey }
+      : { 'Content-Type': 'application/json' }
+    const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + aiApiKey },
+      headers,
       body: JSON.stringify({
         model,
         temperature: 0,
@@ -618,9 +622,13 @@ function ScannerTab({ coreMode = false }) {
 
   const callVisionModel = async (model, imageDataUrl) => {
     const prompt = buildPrompt()
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const endpoint = devMode && aiApiKey ? 'https://openrouter.ai/api/v1/chat/completions' : '/api/vision/chat'
+    const headers = devMode && aiApiKey
+      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` }
+      : { 'Content-Type': 'application/json' }
+    const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
+      headers,
       body: JSON.stringify({
         model,
         temperature: 0.1,
@@ -887,7 +895,7 @@ function ScannerTab({ coreMode = false }) {
 
   const runAiIdentify = async (file) => {
     if (!file) return setAiStatus('Pick a card image first.')
-    if (!aiApiKey) return setAiStatus('Add API key first.')
+    if (devMode && !aiApiKey) return setAiStatus('Add API key first.')
     if (spentToday >= dailyBudgetCap) return setAiStatus(`Daily cap reached ($${dailyBudgetCap}).`)
 
     setAiStatus('Preparing image + checking cache...')
@@ -1194,6 +1202,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
