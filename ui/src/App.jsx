@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 1:20 PM | 3185c442'
+const BUILD_STAMP = 'BUILD 2026-03-01 1:56 PM | 5313562d'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -196,6 +196,7 @@ function ScannerTab({ coreMode = false }) {
   const [aiResult, setAiResult] = useState(null)
   const [scanHistory, setScanHistory] = useState([])
   const [scanCache, setScanCache] = useState({})
+  const [priceCache, setPriceCache] = useState(() => { try { return JSON.parse(localStorage.getItem('rng_price_cache_v1') || '{}') } catch { return {} } })
   const [correction, setCorrection] = useState('')
   const [telemetryDir, setTelemetryDir] = useState(null)
   const [telemetryWebhook, setTelemetryWebhook] = useState(() => localStorage.getItem('rng_telemetry_webhook') || '/api/telemetry/ingest')
@@ -226,6 +227,7 @@ function ScannerTab({ coreMode = false }) {
   useEffect(() => { localStorage.setItem('rng_pricing_mode', pricingMode) }, [pricingMode])
   useEffect(() => { localStorage.setItem('rng_rapidapi_key', rapidApiKey) }, [rapidApiKey])
   useEffect(() => { localStorage.setItem('rng_pricing_currency', pricingCurrency) }, [pricingCurrency])
+  useEffect(() => { localStorage.setItem('rng_price_cache_v1', JSON.stringify(priceCache)) }, [priceCache])
 
   // Safety net: if scan is verified but pricing is missing, fetch it in-band.
   useEffect(() => {
@@ -927,6 +929,26 @@ function ScannerTab({ coreMode = false }) {
     }
   }
 
+  const makePriceKey = (ai) => {
+    const n = String(ai?.card_name_english || ai?.card_name || '').toLowerCase().trim()
+    const num = String(ai?.card_number || '').toLowerCase().trim()
+    const setn = String(ai?.set_name_english || ai?.set_name || '').toLowerCase().trim()
+    return `${n}|${num}|${setn}|${pricingCurrency}`
+  }
+
+  const getCachedPricing = (ai) => {
+    const k = makePriceKey(ai)
+    const hit = priceCache[k]
+    if (!hit) return null
+    if ((Date.now() - Number(hit.ts || 0)) > (10 * 60 * 1000)) return null
+    return hit.pricing || null
+  }
+
+  const putCachedPricing = (ai, pricing) => {
+    const k = makePriceKey(ai)
+    setPriceCache((prev) => ({ ...prev, [k]: { ts: Date.now(), pricing } }))
+  }
+
   const submitFeedback = async (verdict, correctedLabel = '') => {
     if (!aiResult?.scanHash) return
     const feedback = {
@@ -1001,45 +1023,64 @@ function ScannerTab({ coreMode = false }) {
       setAiResult({ ...finalResult, estimatedCost: Number(totalCost.toFixed(6)), cached: false, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } })
       setAiStatus('Card detected. Enriching verification + price...')
 
+      // Turbo v2: conditional verify path (skip heavy crop/resolve when already strong)
       const tVerifyStart = performance.now()
-      try {
-        finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
-        const cropBlob = await cropSetIdRegion(file)
-        const cropDataUrl = await blobToDataUrl(cropBlob)
-        const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl) || {}
-        const cropRaw = String(cropRead?.card_number || '').trim()
-        const cropNum = normalizeSetNumber(cropRaw) || extractSetNumber(cropRaw)
-        finalResult = {
-          ...finalResult,
-          set_number_crop_raw: cropRaw || null,
-          set_number_crop_confidence: Number(cropRead?.confidence || 0),
-          set_number_crop_image_bytes: Number(cropBlob?.size || 0),
-        }
-        if (cropNum) {
-          finalResult = { ...finalResult, card_number: cropNum }
-        }
-      } catch (err) {
-        finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
-      }
+      const hasStructuredNumber = !!(finalResult.card_number && String(finalResult.card_number).includes('/'))
+      const strongPass = Number(finalResult.confidence || 0) >= Math.max(85, Number(aiThreshold || 85))
+      const requiresStrictVerify = !hasStructuredNumber || !strongPass
 
-      if (finalResult.card_number && Number(finalResult.set_number_crop_confidence || 0) >= 85) {
-        finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'crop-authoritative', set_number_original: finalResult.set_number_before_crop || null }
+      if (requiresStrictVerify) {
+        try {
+          finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
+          const cropBlob = await cropSetIdRegion(file)
+          const cropDataUrl = await blobToDataUrl(cropBlob)
+          const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl) || {}
+          const cropRaw = String(cropRead?.card_number || '').trim()
+          const cropNum = normalizeSetNumber(cropRaw) || extractSetNumber(cropRaw)
+          finalResult = {
+            ...finalResult,
+            set_number_crop_raw: cropRaw || null,
+            set_number_crop_confidence: Number(cropRead?.confidence || 0),
+            set_number_crop_image_bytes: Number(cropBlob?.size || 0),
+          }
+          if (cropNum) {
+            finalResult = { ...finalResult, card_number: cropNum }
+          }
+        } catch (err) {
+          finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
+        }
+
+        if (finalResult.card_number && Number(finalResult.set_number_crop_confidence || 0) >= 85) {
+          finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'crop-authoritative', set_number_original: finalResult.set_number_before_crop || null }
+        } else {
+          const resolved = await autoResolveSetNumber(finalResult)
+          finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+        }
       } else {
-        const resolved = await autoResolveSetNumber(finalResult)
-        finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+        finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'fastpath-ai-structured' }
       }
 
       const verifyMs = Math.round(performance.now() - tVerifyStart)
       setScanTimers((t) => ({ ...t, verifyMs }))
 
-      // Non-blocking pricing fetch for faster UX
+      // Turbo v2: cached + timeout pricing fetch
       const pricingPromise = (async () => {
         const tPriceStart = performance.now()
+        const cachedPricing = getCachedPricing(finalResult)
+        if (cachedPricing) {
+          setScanTimers((t) => ({ ...t, priceMs: Math.round(performance.now() - tPriceStart) }))
+          return { ...cachedPricing, reason: cachedPricing.reason || 'cardmarket_cached' }
+        }
         try {
-          const cm = await fetchCardmarketPrimaryPrice(finalResult)
+          const timeoutMs = 2500
+          const cm = await Promise.race([
+            fetchCardmarketPrimaryPrice(finalResult),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Cardmarket timeout')), timeoutMs)),
+          ])
           const fx = await convertCurrency(cm.value, cm.baseCurrency || cm.currency || 'EUR', pricingCurrency)
           const primary = fx ? { ...cm, value: fx.value, currency: fx.currency, fxRate: fx.rate, convertedFrom: cm.baseCurrency || cm.currency || 'EUR' } : cm
           const out = { ...(finalResult.pricing || {}), primary, final: primary.value, reason: fx ? 'cardmarket_primary_converted' : 'cardmarket_primary' }
+          putCachedPricing(finalResult, out)
           setScanTimers((t) => ({ ...t, priceMs: Math.round(performance.now() - tPriceStart) }))
           return out
         } catch (priceErr) {
@@ -1296,6 +1337,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
