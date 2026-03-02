@@ -13,13 +13,46 @@ const debugStagesEl = document.getElementById('debugStages');
 const DB_KEY = 'rng_image_match_db_v3';
 let referenceDb = [];
 
+function hashToBigInt(hash) {
+  if (typeof hash !== 'string' || hash.length !== 64) return null;
+  try {
+    return BigInt(`0b${hash}`);
+  } catch {
+    return null;
+  }
+}
+
+function popcountBigInt(n) {
+  let count = 0;
+  let v = n;
+  while (v) {
+    v &= v - 1n;
+    count++;
+  }
+  return count;
+}
+
+function hydrateReferenceEntry(ref) {
+  return {
+    ...ref,
+    fullHashInt: hashToBigInt(ref.fullHash || ref.hash),
+    cropHashInt: hashToBigInt(ref.cropHash || ref.hash),
+    innerHashInt: hashToBigInt(ref.innerHash || ref.cropHash || ref.hash),
+  };
+}
+
+function stripRuntimeFields(ref) {
+  const { fullHashInt, cropHashInt, innerHashInt, ...persisted } = ref;
+  return persisted;
+}
+
 function saveDb() {
-  localStorage.setItem(DB_KEY, JSON.stringify(referenceDb));
+  localStorage.setItem(DB_KEY, JSON.stringify(referenceDb.map(stripRuntimeFields)));
 }
 
 function loadDb() {
   try {
-    referenceDb = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+    referenceDb = JSON.parse(localStorage.getItem(DB_KEY) || '[]').map(hydrateReferenceEntry);
   } catch {
     referenceDb = [];
   }
@@ -41,6 +74,13 @@ function hammingDistance(a, b) {
 function confidenceFromDistance(distance, bits = 64) {
   const ratio = Math.max(0, 1 - distance / bits);
   return Math.round(ratio * 100);
+}
+
+function hammingDistanceFast(hashIntA, hashIntB, hashA, hashB) {
+  if (hashIntA !== null && hashIntB !== null) {
+    return popcountBigInt(hashIntA ^ hashIntB);
+  }
+  return hammingDistance(hashA, hashB);
 }
 
 async function fileToImageBitmap(file) {
@@ -218,9 +258,13 @@ function computeMultiHashesFromBitmap(bitmap, debug = false) {
 }
 
 function blendedDistance(query, ref) {
-  const d1 = hammingDistance(query.fullHash, ref.fullHash || ref.hash || query.fullHash);
-  const d2 = hammingDistance(query.cropHash, ref.cropHash || ref.hash || query.cropHash);
-  const d3 = hammingDistance(query.innerHash, ref.innerHash || ref.cropHash || ref.hash || query.innerHash);
+  const refFullHash = ref.fullHash || ref.hash || query.fullHash;
+  const refCropHash = ref.cropHash || ref.hash || query.cropHash;
+  const refInnerHash = ref.innerHash || ref.cropHash || ref.hash || query.innerHash;
+
+  const d1 = hammingDistanceFast(query.fullHashInt, ref.fullHashInt, query.fullHash, refFullHash);
+  const d2 = hammingDistanceFast(query.cropHashInt, ref.cropHashInt, query.cropHash, refCropHash);
+  const d3 = hammingDistanceFast(query.innerHashInt, ref.innerHashInt, query.innerHash, refInnerHash);
   return Math.round(d1 * 0.2 + d2 * 0.5 + d3 * 0.3);
 }
 
@@ -247,7 +291,7 @@ async function buildReferenceDb(files) {
     }
   }
 
-  referenceDb = nextDb;
+  referenceDb = nextDb.map(hydrateReferenceEntry);
   saveDb();
   dbStatus.textContent = `DB ready. Indexed ${referenceDb.length} images.`;
 }
@@ -294,7 +338,7 @@ async function buildFromPokemonManifest() {
     if ((i + 1) % 100 === 0) dbStatus.textContent = `Hashing Pokemon images... ${i + 1}/${cards.length}`;
   }
 
-  referenceDb = nextDb;
+  referenceDb = nextDb.map(hydrateReferenceEntry);
   saveDb();
   dbStatus.textContent = `Pokemon DB ready (phase 2). Indexed ${referenceDb.length} images.`;
 }
@@ -339,10 +383,16 @@ async function runMatch(file) {
   matchStatus.textContent = 'Matching (phase 2 crop-aware)...';
   const bitmap = await fileToImageBitmap(file);
   const query = computeMultiHashesFromBitmap(bitmap, true);
+  const queryWithInts = {
+    ...query,
+    fullHashInt: hashToBigInt(query.fullHash),
+    cropHashInt: hashToBigInt(query.cropHash),
+    innerHashInt: hashToBigInt(query.innerHash),
+  };
 
   const matches = referenceDb
     .map((ref) => {
-      const distance = blendedDistance(query, ref);
+      const distance = blendedDistance(queryWithInts, ref);
       return { ...ref, distance, confidence: confidenceFromDistance(distance) };
     })
     .sort((a, b) => a.distance - b.distance)
