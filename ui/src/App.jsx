@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-02 5:58 PM | scanner-parity'
+const BUILD_STAMP = 'BUILD 2026-03-02 6:35 PM | scanner-live-scan'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -296,9 +296,13 @@ function ScannerTab({ coreMode = false }) {
   }
 
   const startLiveScan = async () => {
-    setAiStatus('Live auto-scan is disabled in this build.')
-    return
     try {
+      if (loopRef.current) clearInterval(loopRef.current)
+      loopRef.current = null
+      seenHashesRef.current = new Set()
+
+      const ok = await ensureCameraReady()
+      if (!ok) return
       if (!navigator.mediaDevices?.getUserMedia) {
         setAiStatus('Camera API unavailable in this browser.')
         return
@@ -316,6 +320,7 @@ function ScannerTab({ coreMode = false }) {
       loopRef.current = setInterval(async () => {
         try {
           if (!videoRef.current) return
+          if (document.hidden) return
           if (liveBusyRef.current) return
           liveBusyRef.current = true
           const file = await captureLiveFrame()
@@ -324,6 +329,10 @@ function ScannerTab({ coreMode = false }) {
           if (seenHashesRef.current.has(h)) return
           seenHashesRef.current.add(h)
           await runAiIdentify(file)
+          if (seenHashesRef.current.size > 120) {
+            const keep = Array.from(seenHashesRef.current).slice(-80)
+            seenHashesRef.current = new Set(keep)
+          }
         } finally {
           liveBusyRef.current = false
         }
@@ -334,15 +343,16 @@ function ScannerTab({ coreMode = false }) {
   }
 
   const stopLiveScan = () => {
-    setAiStatus('Live auto-scan is disabled in this build.')
-
     setLiveScanOn(false)
     if (loopRef.current) clearInterval(loopRef.current)
     loopRef.current = null
+    liveBusyRef.current = false
+    seenHashesRef.current = new Set()
     if (streamRef.current) {
       for (const t of streamRef.current.getTracks()) t.stop()
       streamRef.current = null
     }
+    if (videoRef.current) videoRef.current.srcObject = null
     setAiStatus('Live scan stopped.')
   }
 
@@ -1188,8 +1198,10 @@ function ScannerTab({ coreMode = false }) {
         <div className="action-row">
           <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
+          <select value={liveSpeed} onChange={(e) => setLiveSpeed(e.target.value)} style={{maxWidth:90}} disabled={liveScanOn}><option value="1x">Live 1x</option><option value="2x">Live 2x</option><option value="3x">Live 3x</option></select>
           <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
-                    <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
+          {!liveScanOn ? <button className="btn" onClick={startLiveScan}>Start live</button> : <button className="btn" onClick={stopLiveScan}>Stop live</button>}
+          <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
         <div className="muted">Last scan time: {lastScanMs != null ? `${lastScanMs} ms` : 'n/a'}</div>
@@ -1356,6 +1368,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
