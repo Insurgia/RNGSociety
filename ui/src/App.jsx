@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 
 const BUILD_STAMP = 'BUILD 2026-03-02 5:58 PM | scanner-parity'
 
@@ -130,8 +130,8 @@ function BagBuilderTab() {
   const totals = useMemo(() => activeBag ? activeBag.items.reduce((acc, i) => ({ items: acc.items + i.qty, value: acc.value + i.qty * i.salePrice }), { items: 0, value: 0 }) : { items: 0, value: 0 }, [activeBag])
 
   return <Card title="Bag Builder" description="Customer bag tracking."><div className="grid three"><label>Customer username<input value={username} onChange={(e) => setUsername(e.target.value)} /></label><label>Platform<input value={platform} onChange={(e) => setPlatform(e.target.value)} /></label><label style={{ alignSelf: 'end' }}><button className="btn" onClick={createBag}>Create bag</button></label></div>
-    <div className="split" style={{ marginTop: 12 }}><div className="panel"><h3>Active bags</h3>{bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}><span>{b.bagId}</span><small>{b.username} ï¿½ {b.items.length} items</small></button>)}</div>
-      <div className="panel"><h3>{activeBag ? `${activeBag.bagId} ï¿½ ${activeBag.username}` : 'Select a bag'}</h3>{activeBag ? <><div className="grid three"><label>Item<input value={itemName} onChange={(e) => setItemName(e.target.value)} /></label><label>Qty<input value={qty} onChange={(e) => setQty(e.target.value)} /></label><label>Sale price<input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} /></label></div><button className="btn" style={{ marginTop: 10 }} onClick={addItem}>Add item</button><div className="kpi" style={{ marginTop: 12 }}><div className="pill"><span>Total qty</span><strong>{totals.items}</strong></div><div className="pill"><span>Total value</span><strong>{currency(totals.value)}</strong></div></div></> : <p className="muted">Create/select a bag to manage items.</p>}</div></div>
+    <div className="split" style={{ marginTop: 12 }}><div className="panel"><h3>Active bags</h3>{bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}><span>{b.bagId}</span><small>{b.username} � {b.items.length} items</small></button>)}</div>
+      <div className="panel"><h3>{activeBag ? `${activeBag.bagId} � ${activeBag.username}` : 'Select a bag'}</h3>{activeBag ? <><div className="grid three"><label>Item<input value={itemName} onChange={(e) => setItemName(e.target.value)} /></label><label>Qty<input value={qty} onChange={(e) => setQty(e.target.value)} /></label><label>Sale price<input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} /></label></div><button className="btn" style={{ marginTop: 10 }} onClick={addItem}>Add item</button><div className="kpi" style={{ marginTop: 12 }}><div className="pill"><span>Total qty</span><strong>{totals.items}</strong></div><div className="pill"><span>Total value</span><strong>{currency(totals.value)}</strong></div></div></> : <p className="muted">Create/select a bag to manage items.</p>}</div></div>
   </Card>
 }
 
@@ -1174,7 +1174,7 @@ function ScannerTab({ coreMode = false }) {
         <div className="scan-kicker">Step 1</div>
         <h3>Capture card</h3>
         <p className="muted">Frame the card in the guide, then tap anywhere on the camera view to scan.</p>
-        <div className="live-cam-wrap">
+        <div className="live-cam-wrap" onClick={handleFrameTapScan} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFrameTapScan() } }}>
           <video ref={videoRef} className="live-cam" playsInline muted autoPlay />
           <div className="cam-overlay">
             <div className="scan-instruction">Frame card + tap anywhere to scan</div>
@@ -1189,8 +1189,7 @@ function ScannerTab({ coreMode = false }) {
           <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
           <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
-          <button className="btn" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>Scan now</button>
-          <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
+                    <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
         <div className="muted">Last scan time: {lastScanMs != null ? `${lastScanMs} ms` : 'n/a'}</div>
@@ -1227,15 +1226,15 @@ function ScannerTab({ coreMode = false }) {
     <section className="scan-history panel" style={{ marginTop: 12 }}>
       <div className="lab-head"><h3>Recent scans</h3><span className="muted">{scanHistory.length} entries</span></div>
       <div className="history-list">
-        {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-item" onClick={() => h.result && setAiResult(h.result)}>
-          {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
+        {scanHistory.slice(0, 20).map((h, i) => <button key={h.hash + i} className="history-item" onClick={() => h.resultSnapshot && setAiResult(h.resultSnapshot)}>
+          {h.imageDataUrl ? <img src={h.imageDataUrl} alt={h.card || 'scan'} /> : <div className="history-thumb-fallback">No Img</div>}
           <div>
-            <strong>{h.name}</strong>
-            <small>{h.number} ? {h.set}</small>
-            <small>{h.price} {h.currency}</small>
+            <strong>{h.card || 'Unknown card'}</strong>
+            <small>{h.card_number || '-'} • {Number(h.confidence || 0)}%</small>
+            <small>{h.model || '-'}</small>
           </div>
         </button>)}
-        {!liveItems.length ? <span className="muted">No scans yet.</span> : null}
+        {!scanHistory.length ? <span className="muted">No scans yet.</span> : null}
       </div>
     </section>
   </Card>
