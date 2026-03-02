@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-01 2:44 PM | 5eaf6fe5'
+const BUILD_STAMP = 'BUILD 2026-03-02 5:58 PM | scanner-parity'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -130,8 +130,8 @@ function BagBuilderTab() {
   const totals = useMemo(() => activeBag ? activeBag.items.reduce((acc, i) => ({ items: acc.items + i.qty, value: acc.value + i.qty * i.salePrice }), { items: 0, value: 0 }) : { items: 0, value: 0 }, [activeBag])
 
   return <Card title="Bag Builder" description="Customer bag tracking."><div className="grid three"><label>Customer username<input value={username} onChange={(e) => setUsername(e.target.value)} /></label><label>Platform<input value={platform} onChange={(e) => setPlatform(e.target.value)} /></label><label style={{ alignSelf: 'end' }}><button className="btn" onClick={createBag}>Create bag</button></label></div>
-    <div className="split" style={{ marginTop: 12 }}><div className="panel"><h3>Active bags</h3>{bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}><span>{b.bagId}</span><small>{b.username} � {b.items.length} items</small></button>)}</div>
-      <div className="panel"><h3>{activeBag ? `${activeBag.bagId} � ${activeBag.username}` : 'Select a bag'}</h3>{activeBag ? <><div className="grid three"><label>Item<input value={itemName} onChange={(e) => setItemName(e.target.value)} /></label><label>Qty<input value={qty} onChange={(e) => setQty(e.target.value)} /></label><label>Sale price<input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} /></label></div><button className="btn" style={{ marginTop: 10 }} onClick={addItem}>Add item</button><div className="kpi" style={{ marginTop: 12 }}><div className="pill"><span>Total qty</span><strong>{totals.items}</strong></div><div className="pill"><span>Total value</span><strong>{currency(totals.value)}</strong></div></div></> : <p className="muted">Create/select a bag to manage items.</p>}</div></div>
+    <div className="split" style={{ marginTop: 12 }}><div className="panel"><h3>Active bags</h3>{bags.length === 0 ? <p className="muted">No bags yet.</p> : bags.map((b) => <button key={b.id} className={`list-row ${b.id === activeId ? 'active' : ''}`} onClick={() => setActiveId(b.id)}><span>{b.bagId}</span><small>{b.username} ï¿½ {b.items.length} items</small></button>)}</div>
+      <div className="panel"><h3>{activeBag ? `${activeBag.bagId} ï¿½ ${activeBag.username}` : 'Select a bag'}</h3>{activeBag ? <><div className="grid three"><label>Item<input value={itemName} onChange={(e) => setItemName(e.target.value)} /></label><label>Qty<input value={qty} onChange={(e) => setQty(e.target.value)} /></label><label>Sale price<input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} /></label></div><button className="btn" style={{ marginTop: 10 }} onClick={addItem}>Add item</button><div className="kpi" style={{ marginTop: 12 }}><div className="pill"><span>Total qty</span><strong>{totals.items}</strong></div><div className="pill"><span>Total value</span><strong>{currency(totals.value)}</strong></div></div></> : <p className="muted">Create/select a bag to manage items.</p>}</div></div>
   </Card>
 }
 
@@ -229,6 +229,8 @@ function ScannerTab({ coreMode = false }) {
   useEffect(() => { localStorage.setItem('rng_pricing_currency', pricingCurrency) }, [pricingCurrency])
   useEffect(() => { localStorage.setItem('rng_price_cache_v1', JSON.stringify(priceCache)) }, [priceCache])
 
+  useEffect(() => { ensureCameraReady() }, [])
+
   // Safety net: if scan is verified but pricing is missing, fetch it in-band.
   useEffect(() => {
     if (!aiResult) return
@@ -259,13 +261,19 @@ function ScannerTab({ coreMode = false }) {
         videoRef.current.srcObject = stream
         await videoRef.current.play().catch(() => {})
       }
-      setAiStatus('Camera ready.')
+      setAiStatus('Camera ready. Frame the card, then tap anywhere on camera to scan.')
       return true
     } catch (e) {
       setAiStatus(`Camera permission/error: ${e?.message || 'unable to access camera'}`)
       return false
     }
   }
+
+  useEffect(() => {
+    if (cameraPrompted) return
+    setCameraPrompted(true)
+    ensureCameraReady()
+  }, [cameraPrompted])
 
   const captureLiveFrame = async () => {
     const ok = await ensureCameraReady()
@@ -279,6 +287,12 @@ function ScannerTab({ coreMode = false }) {
     const blob = await new Promise((resolve) => c.toBlob((b) => resolve(b), 'image/jpeg', 0.86))
     if (!blob) return null
     return new File([blob], `live-${Date.now()}.jpg`, { type: 'image/jpeg' })
+  }
+
+  const handleFrameTapScan = async () => {
+    const f = await captureLiveFrame()
+    if (f) await runAiIdentify(f)
+    else setAiStatus('Camera not ready yet. If camera permission was denied, enable it in browser settings.')
   }
 
   const startLiveScan = async () => {
@@ -359,6 +373,8 @@ function ScannerTab({ coreMode = false }) {
       set: aiResult.set_name_english || aiResult.set_name || '-',
       price: Number(aiResult.pricing.primary.value || 0),
       currency: aiResult.pricing.primary.currency || 'USD',
+      thumb: aiResult.previewUrl || null,
+      result: aiResult,
     }
     setLiveItems((prev) => [item, ...prev].slice(0, 200))
     setRunningTotal((prev) => Number((prev + item.price).toFixed(2)))
@@ -502,7 +518,7 @@ function ScannerTab({ coreMode = false }) {
     return m ? `${m[1]}/${m[2]}` : null
   }
 
-  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff ]/g, ' ').replace(/\s+/g, ' ').trim()
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, ' ').replace(/\s+/g, ' ').trim()
 
   const digitDistance = (a, b) => {
     if (!a || !b || a.length !== b.length) return 999
@@ -565,7 +581,7 @@ function ScannerTab({ coreMode = false }) {
 
   const verifyAgainstDb = (ai) => {
     if (!ai || !referenceDb.length) return null
-    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿]/g, '')
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, '')
     const primaryName = languageMode === 'japanese' ? (ai.card_name_native || ai.card_name) : (ai.card_name_english || ai.card_name)
     const setName = languageMode === 'japanese' ? (ai.set_name_native || ai.set_name) : (ai.set_name_english || ai.set_name)
     const target = norm(`${primaryName || ''} ${setName || ''} ${ai.card_number || ''}`)
@@ -812,7 +828,7 @@ function ScannerTab({ coreMode = false }) {
     if (!cards.length && cardName) cards = await fetchSearch(cardName, '')
     if (!cards.length) throw new Error('No cards returned from Cardmarket search')
 
-    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, ' ').replace(/\s+/g, ' ').trim()
     const nameN = norm(cardName)
     const numBase = cardNum.split('/')[0]
 
@@ -997,6 +1013,7 @@ function ScannerTab({ coreMode = false }) {
       const compressed = await compressForVision(file)
       const imageDataUrl = await blobToDataUrl(compressed)
       const compressedB64 = await blobToDataUrl(compressed)
+      const previewUrl = URL.createObjectURL(file)
 
       setAiStatus('AI identify running (primary model)...')
       const tFirstStart = performance.now()
@@ -1005,7 +1022,7 @@ function ScannerTab({ coreMode = false }) {
       const primaryVerified = verifyAgainstDb(primary.parsed)
       let totalCost = estimateCost(aiPrimaryModel, primary.usage)
 
-      let finalResult = { ...primary.parsed, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false, scanHash }
+      let finalResult = { ...primary.parsed, routedModel: aiPrimaryModel, verifiedMatch: primaryVerified || null, escalated: false, scanHash, previewUrl }
       const needsEscalation = primaryConfidence < Number(aiThreshold || 85)
 
       if (needsEscalation) {
@@ -1013,7 +1030,7 @@ function ScannerTab({ coreMode = false }) {
         const fallback = await callVisionModel(aiFallbackModel, imageDataUrl)
         totalCost += estimateCost(aiFallbackModel, fallback.usage)
         const fallbackVerified = verifyAgainstDb(fallback.parsed)
-        finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash }
+        finalResult = { ...fallback.parsed, routedModel: aiFallbackModel, verifiedMatch: fallbackVerified || null, escalated: true, primaryCandidate: { ...primary.parsed, verified: !!primaryVerified }, scanHash, previewUrl }
       }
 
       const firstPassMs = Math.round(performance.now() - tFirstStart)
@@ -1089,7 +1106,7 @@ function ScannerTab({ coreMode = false }) {
 
       finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } }
 
-      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: storeImages ? compressedB64 : null }
+      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: compressedB64, resultSnapshot: finalResult }
 
       if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
         const blockedHistory = { ...baseHistory, status: 'blocked_unverified_setid' }
@@ -1156,10 +1173,11 @@ function ScannerTab({ coreMode = false }) {
       <section className="scan-capture">
         <div className="scan-kicker">Step 1</div>
         <h3>Capture card</h3>
-        <p className="muted">Tap the capture button to scan one card at a time (RareCandy style).</p>
+        <p className="muted">Frame the card in the guide, then tap anywhere on the camera view to scan.</p>
         <div className="live-cam-wrap">
           <video ref={videoRef} className="live-cam" playsInline muted autoPlay />
           <div className="cam-overlay">
+            <div className="scan-instruction">Frame card + tap anywhere to scan</div>
             <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
           </div>
         </div>
@@ -1171,7 +1189,7 @@ function ScannerTab({ coreMode = false }) {
           <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
           <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
           <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
-          <button className="btn" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>Tap to capture + scan</button>
+          <button className="btn" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>Scan now</button>
           <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
         </div>
         <div className="muted">{aiStatus || 'Ready.'}</div>
@@ -1208,12 +1226,16 @@ function ScannerTab({ coreMode = false }) {
 
     <section className="scan-history panel" style={{ marginTop: 12 }}>
       <div className="lab-head"><h3>Recent scans</h3><span className="muted">{scanHistory.length} entries</span></div>
-      <div className="history-row">
-        {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-chip">
-          <strong>{h.name}</strong>
-          <small>{h.number} | {h.set} | {h.price} {h.currency}</small>
+      <div className="history-list">
+        {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-item" onClick={() => h.result && setAiResult(h.result)}>
+          {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
+          <div>
+            <strong>{h.name}</strong>
+            <small>{h.number} ? {h.set}</small>
+            <small>{h.price} {h.currency}</small>
+          </div>
         </button>)}
-        {!liveItems.length ? <span className="muted">No live detections yet.</span> : null}
+        {!liveItems.length ? <span className="muted">No scans yet.</span> : null}
       </div>
     </section>
   </Card>
@@ -1299,9 +1321,9 @@ export default function App() {
     { id: 'lab', label: 'Lab' },
   ]
 
-  return <main className="app app-clean">
+  return <main className={`app app-clean ${tab === 'scanner' ? 'scanner-fullscreen-mode' : ''}`}>
     <div className="glow" />
-    <header className="header clean-header">
+    {tab !== 'scanner' ? <header className="header clean-header">
       <div className="brand-wrap">
         <div className="logo">R</div>
         <div>
@@ -1313,9 +1335,9 @@ export default function App() {
         <span className="build-chip">{BUILD_STAMP}</span>
         <button className="btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
       </div>
-    </header>
+    </header> : null}
 
-    <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>
+    {tab !== 'scanner' ? <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav> : <div className="scanner-topbar"><button className="btn btn-sm" onClick={() => setTab('singles')}>Back</button><div className="scanner-topbar-title">Scanner</div><button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button></div>}
 
     {tab === 'scanner' ? <section className="hero-strip">
       <div>
