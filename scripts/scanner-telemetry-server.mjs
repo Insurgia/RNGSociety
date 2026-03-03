@@ -26,12 +26,15 @@ const createAppender = ({ outDir }) => {
     if (flushing || queue.length === 0) return
     flushing = true
 
-    while (queue.length > 0) {
-      const item = queue.shift()
-      await fs.promises.appendFile(item.target, item.line, 'utf8')
+    try {
+      while (queue.length > 0) {
+        const item = queue[0]
+        await fs.promises.appendFile(item.target, item.line, 'utf8')
+        queue.shift()
+      }
+    } finally {
+      flushing = false
     }
-
-    flushing = false
   }
 
   const append = async (kind, line) => {
