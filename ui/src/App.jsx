@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-03 12:11 AM | scanner-recent-scan-fix'
+const BUILD_STAMP = 'BUILD 2026-03-03 12:22 AM | scanner-live-speed-hot-swap'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -281,13 +281,12 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
     }
   }
 
-  const cameraPromptedRef = React.useRef(false)
-
+  
   useEffect(() => {
-    if (cameraPromptedRef.current) return
-    cameraPromptedRef.current = true
-    ensureCameraReady()
-  }, [])
+    if (!liveScanOn) return
+    startLiveScan()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSpeed])
 
   const captureLiveFrame = async () => {
     const ok = await ensureCameraReady()
@@ -1223,7 +1222,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
         <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
         <div className="rc-tap-overlay">Tap Anywhere to Scan</div>
         <div className="rc-bottom-controls">
-          <button className={`rc-pill ${liveSpeed === '1x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('1x') }}>1.5x</button>
+          <button className={`rc-pill ${liveSpeed === '1x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('1x') }}>1x</button>
           <button className={`rc-pill ${liveSpeed === '2x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('2x') }}>2x</button>
           <button className={`rc-pill ${liveSpeed === '3x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('3x') }}>3x</button>
           <button className={`rc-pill rc-mode ${scanMode === 'raw' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setScanMode(scanMode === 'raw' ? 'verified' : 'raw') }}>{scanMode === 'raw' ? 'Scanning: Raw' : 'Scanning: Verified'}</button>
@@ -1260,6 +1259,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
 
       <div className="rc-utility-row" style={{ marginTop: 8 }}>
         <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
+        <button className="btn" onClick={liveScanOn ? stopLiveScan : startLiveScan}>{liveScanOn ? 'Stop live' : 'Start live'}</button>
         <label className="capture-drop rc-upload"><input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /><span>Upload</span></label>
         <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
       </div>
@@ -1383,6 +1383,16 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
