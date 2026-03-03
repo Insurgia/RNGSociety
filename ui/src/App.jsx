@@ -214,7 +214,7 @@ function ScannerTab({ coreMode = false }) {
   const [runningTotal, setRunningTotal] = useState(0)
   const [lastScanMs, setLastScanMs] = useState(null)
   const [scanTimers, setScanTimers] = useState({ firstPassMs: null, verifyMs: null, priceMs: null })
-  const [isIdentifying, setIsIdentifying] = useState(false)
+  const [isScanning, setIsScanning] = useState(false)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -999,6 +999,7 @@ function ScannerTab({ coreMode = false }) {
     if (!file) return setAiStatus('Pick a card image first.')
     if (devMode && !aiApiKey) { setAiStatus('Add API key first.'); return }
     if (spentToday >= dailyBudgetCap) { setAiStatus(`Daily cap reached (${dailyBudgetCap}).`); return }
+    setIsScanning(true)
 
     setAiStatus('Preparing image + checking cache...')
     setAiResult(null)
@@ -1009,6 +1010,7 @@ function ScannerTab({ coreMode = false }) {
       if (cached) {
         setAiResult({ ...cached.result, cached: true, scanHash })
         setAiStatus('Cache hit: returned previous result instantly.')
+        setIsScanning(false)
         return
       }
 
@@ -1118,6 +1120,7 @@ function ScannerTab({ coreMode = false }) {
         const elapsed = Math.round(performance.now() - startedAt)
         setLastScanMs(elapsed)
         setAiStatus(`Scan incomplete: set number could not be auto-verified. Blocked until verified. (${elapsed} ms)` )
+        setIsScanning(false)
         return
       }
       const historyEntry = { ...baseHistory, status: 'verified' }
@@ -1136,11 +1139,13 @@ function ScannerTab({ coreMode = false }) {
       })
       const suffix = route === 'error' ? ' (telemetry failed)' : ''
       setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: ${historyEntry.estimatedCost}${suffix} | ${elapsed} ms`)
+      setIsScanning(false)
     } catch (e) {
       if (String(e.message || '').includes('HTTP 402')) setAiStatus('AI identify failed: OpenRouter credits/billing required (402).')
       else if (String(e.message || '').includes('HTTP 429')) setAiStatus('AI identify failed: rate limited (429). Slow down/retry.')
       else setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
       setLastScanMs(Math.round(performance.now() - startedAt))
+      setIsScanning(false)
     }
   }
 
@@ -1170,78 +1175,58 @@ function ScannerTab({ coreMode = false }) {
     </Card>
   }
 
-  return <Card title="Scanner" description="Capture-first reseller scanner flow.">
-    <div className="scan-shell">
-      <section className="scan-capture">
-        <div className="scan-kicker">Step 1</div>
-        <h3>Capture card</h3>
-        <p className="muted">Frame the card in the guide, then tap anywhere on the camera view to scan.</p>
-        <div className="live-cam-wrap" onClick={handleFrameTapScan} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFrameTapScan() } }}>
-          <video ref={videoRef} className="live-cam" playsInline muted autoPlay />
-          <div className="cam-overlay">
-            <div className="scan-instruction">Frame card + tap anywhere to scan</div>
-            <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
-          </div>
-        </div>
-        <label className="capture-drop">
-          <input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} />
-          <span>Manual upload fallback</span>
-        </label>
-        <div className="action-row">
-          <select value={languageMode} onChange={(e) => setLanguageMode(e.target.value)} style={{maxWidth:130}}><option value="auto">Language: Auto</option><option value="english">Language: English</option><option value="japanese">Language: Japanese</option></select>
-          <select value={pricingCurrency} onChange={(e) => setPricingCurrency(e.target.value)} style={{maxWidth:110}}><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option></select>
-          <select value={liveSpeed} onChange={(e) => setLiveSpeed(e.target.value)} style={{maxWidth:90}} disabled={liveScanOn}><option value="1x">Live 1x</option><option value="2x">Live 2x</option><option value="3x">Live 3x</option></select>
-          <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
-          {!liveScanOn ? <button className="btn" onClick={startLiveScan}>Start live</button> : <button className="btn" onClick={stopLiveScan}>Stop live</button>}
-          <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
-        </div>
-        <div className="muted">{aiStatus || 'Ready.'}</div>
-        <div className="muted">Last scan time: {lastScanMs != null ? `${lastScanMs} ms` : 'n/a'}</div>
-        <div className="muted">Pass 1 (identify): {scanTimers.firstPassMs != null ? `${scanTimers.firstPassMs} ms` : 'n/a'} | Verify: {scanTimers.verifyMs != null ? `${scanTimers.verifyMs} ms` : 'n/a'} | Price: {scanTimers.priceMs != null ? `${scanTimers.priceMs} ms` : 'n/a'}</div>
-        <div className="price-pill">Running total: {runningTotal} {aiResult?.pricing?.primary?.currency || pricingCurrency}</div>
-      </section>
-
-      <section className="scan-result panel">
-        <div className="scan-kicker">Step 2</div>
-        <h3>Verify + price</h3>
-        {!aiResult ? <p className="muted">No result yet. Run a scan to populate this card.</p> : <>
-          <div className="result-title">{aiResult.card_name_native || aiResult.card_name || 'Unknown card'}</div>
-          <div className="muted">EN: {aiResult.card_name_english || '-'}</div>
-          <div className="result-grid">
-            <div><span>Set</span><strong>{aiResult.set_name_english || aiResult.set_name || '-'}</strong></div>
-            <div><span>No.</span><strong>{aiResult.card_number || '-'}</strong></div>
-            <div><span>Confidence</span><strong>{aiResult.confidence ?? '-'}%</strong></div>
-            <div><span>Set verify</span><strong>{aiResult.set_number_verified ? 'Verified' : 'Unverified'}</strong></div>
-          </div>
-          {aiResult?.pricing?.primary ? <div className="price-pill">{aiResult.pricing.primary.value} {aiResult.pricing.primary.currency} <small>via {aiResult.pricing.primary.source}</small></div> : null}
-          {aiResult?.pricing?.reason ? <div className="muted">Pricing: {aiResult.pricing.reason}{aiResult?.pricing?.error ? ` (${aiResult.pricing.error})` : ''}</div> : null}
-          <div className="action-row" style={{ marginTop: 10 }}>
-            <button className="btn" onClick={() => submitFeedback('correct')}>Correct</button>
-            <button className="btn" onClick={() => submitFeedback('incorrect')}>Incorrect</button>
-            <button className="btn" onClick={() => submitFeedback('corrected', correction)} disabled={!correction.trim()}>Save correction</button>
-          </div>
-          <label style={{ marginTop: 8 }}>Corrected label
-            <input value={correction} onChange={(e) => setCorrection(e.target.value)} placeholder="Charizard ex 134/108 JP" />
-          </label>
-        </>}
-      </section>
+  return <section className="scanner-rc">
+    <div className="scanner-rc-topbar">
+      <button className="rc-back" onClick={() => window.history.back()}>?</button>
+      <div className="rc-search-wrap"><input className="rc-search" placeholder="Search card name or #" /></div>
     </div>
 
-    <section className="scan-history panel" style={{ marginTop: 12 }}>
-      <div className="lab-head"><h3>Recent scans</h3><span className="muted">{scanHistory.length} entries</span></div>
+    <div className="scanner-rc-canvas">
+      <button className="live-cam-wrap tap-scan rc-cam-shell" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>
+        <video ref={videoRef} className="live-cam rc-live-cam" playsInline muted autoPlay />
+        <div className="cam-overlay">
+          <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
+          <div className="overlay-instruction">Tap Anywhere to Scan</div>
+          <div className="rc-bottom-controls">
+            <button className={`rc-pill ${liveSpeed === '1x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('1x') }}>1.5x</button>
+            <button className={`rc-pill ${liveSpeed === '2x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('2x') }}>2x</button>
+            <button className={`rc-pill ${liveSpeed === '3x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('3x') }}>3x</button>
+            <span className="rc-pill rc-mode">Scanning: Raw</span>
+          </div>
+        </div>
+      </button>
+
+      <div className="rc-utility-row">
+        <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
+        <label className="capture-drop rc-upload"><input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /><span>Upload</span></label>
+        <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
+      </div>
+      <div className="muted">{aiStatus || 'Ready.'}</div>
+    </div>
+
+    <section className="rc-bottom-sheet">
+      <div className="rc-sheet-head">
+        <strong>Recent scans</strong>
+        <div className="rc-sheet-actions">
+          <button className="rc-clear" onClick={() => { setLiveItems([]); setRunningTotal(0) }}>CLEAR</button>
+          <span className="rc-total">Total: {runningTotal} {aiResult?.pricing?.primary?.currency || pricingCurrency}</span>
+        </div>
+      </div>
+
       <div className="history-list">
-        {scanHistory.slice(0, 20).map((h, i) => <button key={h.hash + i} className="history-item" onClick={() => h.resultSnapshot && setAiResult(h.resultSnapshot)}>
-          {h.imageDataUrl ? <img src={h.imageDataUrl} alt={h.card || 'scan'} /> : <div className="history-thumb-fallback">No Img</div>}
+        {isScanning ? <div className="history-item history-skeleton"><div className="history-thumb-fallback" /><div><strong>Scanning...</strong><small>Running OCR + verify + pricing</small></div></div> : null}
+        {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-item" onClick={() => h.result && setAiResult(h.result)}>
+          {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
           <div>
-            <strong>{h.card || 'Unknown card'}</strong>
-            <small>{h.card_number || '-'} • {Number(h.confidence || 0)}%</small>
-            <small>{h.model || '-'}</small>
+            <strong>{h.name}</strong>
+            <small>{h.number} ? {h.set}</small>
+            <small>{h.price} {h.currency} ? {h.result?.set_number_verified ? 'Verified' : 'Unverified'}</small>
           </div>
         </button>)}
-        {!scanHistory.length ? <span className="muted">No scans yet.</span> : null}
+        {!liveItems.length && !isScanning ? <span className="muted">No scans yet.</span> : null}
       </div>
     </section>
-  </Card>
+  </section>
 
 }
 
@@ -1342,7 +1327,7 @@ export default function App() {
 
     {tab !== 'scanner' ? <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav> : <div className="scanner-topbar rc-topbar"><button className="btn btn-sm" onClick={() => setTab('singles')}>←</button><div className="rc-search-shell"><input className="rc-search" placeholder="Search cards, sets, numbers" /></div><button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button></div>}
 
-    {tab === 'scanner' ? <section className="hero-strip">
+    {false ? <section className="hero-strip">
       <div>
         <div className="hero-title">Built for fast reseller flow</div>
         <div className="muted">Capture ? verify set ID ? price ? commit. No config headaches for end users.</div>
