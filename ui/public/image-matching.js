@@ -10,8 +10,19 @@ const matchStatus = document.getElementById('matchStatus');
 const resultsEl = document.getElementById('results');
 const debugStagesEl = document.getElementById('debugStages');
 
-const DB_KEY = 'rng_image_match_db_v3';
+const DB_KEY = 'rng_image_match_db_v4';
 let referenceDb = [];
+
+function revokePreviewUrls(entries = []) {
+  for (const entry of entries) {
+    if (entry?.previewUrl?.startsWith?.('blob:')) {
+      try {
+        URL.revokeObjectURL(entry.previewUrl);
+      } catch {}
+    }
+  }
+}
+
 
 function hashToBigInt(hash) {
   if (typeof hash !== 'string' || hash.length !== 64) return null;
@@ -60,6 +71,7 @@ function loadDb() {
 }
 
 function clearDb() {
+  revokePreviewUrls(referenceDb);
   referenceDb = [];
   localStorage.removeItem(DB_KEY);
   dbStatus.textContent = 'Reference DB cleared.';
@@ -92,6 +104,17 @@ async function urlToImageBitmap(url) {
   if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
   const blob = await res.blob();
   return createImageBitmap(blob);
+}
+
+async function asyncPool(items, worker, concurrency = 6) {
+  const queue = [...items];
+  const runners = Array.from({ length: Math.max(1, concurrency) }, async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
 }
 
 function bitmapToCanvas(bitmap) {
@@ -307,42 +330,51 @@ async function buildFromPokemonManifest() {
   const cards = await res.json();
   dbStatus.textContent = `Hashing ${cards.length} Pokemon card images... (phase 2 crop-aware hashing)`;
   const nextDb = [];
+  let completed = 0;
 
-  for (let i = 0; i < cards.length; i++) {
-    const c = cards[i];
-    const localSrc = c.localImage ? `./data/pokemon/${c.localImage}` : '';
-    const remoteSrc = c.imageUrl || '';
-    const candidates = [localSrc, remoteSrc].filter(Boolean);
+  await asyncPool(
+    cards.map((card) => ({ card })),
+    async ({ card }) => {
+      const localSrc = card.localImage ? `./data/pokemon/${card.localImage}` : '';
+      const remoteSrc = card.imageUrl || '';
+      const candidates = [localSrc, remoteSrc].filter(Boolean);
 
-    let bitmap = null;
-    let usedSrc = '';
-    for (const src of candidates) {
-      try {
-        bitmap = await urlToImageBitmap(src);
-        usedSrc = src;
-        break;
-      } catch {}
-    }
+      let bitmap = null;
+      let usedSrc = '';
+      for (const src of candidates) {
+        try {
+          bitmap = await urlToImageBitmap(src);
+          usedSrc = src;
+          break;
+        } catch {}
+      }
 
-    if (bitmap) {
-      const hashes = computeMultiHashesFromBitmap(bitmap);
-      nextDb.push({
-        id: c.id,
-        name: `${c.name} (${c.setName} #${c.number})`,
-        previewUrl: usedSrc,
-        meta: c,
-        ...hashes,
-      });
-    }
+      if (bitmap) {
+        const hashes = computeMultiHashesFromBitmap(bitmap);
+        nextDb.push({
+          id: card.id,
+          name: `${card.name} (${card.setName} #${card.number})`,
+          previewUrl: usedSrc,
+          meta: card,
+          ...hashes,
+        });
+      }
 
-    if ((i + 1) % 100 === 0) dbStatus.textContent = `Hashing Pokemon images... ${i + 1}/${cards.length}`;
-  }
+      completed += 1;
+      if (completed % 100 === 0 || completed === cards.length) {
+        dbStatus.textContent = `Hashing Pokemon images... ${completed}/${cards.length}`;
+      }
+    },
+    8,
+  );
 
-  referenceDb = nextDb.map(hydrateReferenceEntry);
+  revokePreviewUrls(referenceDb);
+  referenceDb = nextDb
+    .sort((a, b) => (a.meta?.id || a.id || '').localeCompare(b.meta?.id || b.id || ''))
+    .map(hydrateReferenceEntry);
   saveDb();
   dbStatus.textContent = `Pokemon DB ready (phase 2). Indexed ${referenceDb.length} images.`;
 }
-
 function scoreClass(confidence) {
   if (confidence >= 85) return 'ok';
   if (confidence >= 65) return 'warn';
@@ -426,4 +458,7 @@ matchBtn.addEventListener('click', async () => {
 });
 
 loadDb();
+
+
+
 
