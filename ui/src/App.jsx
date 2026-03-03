@@ -382,6 +382,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
     seenCardKeysRef.current.set(key, now)
 
     const item = {
+      id: `${aiResult.scanHash}-${Date.now()}`,
       scanHash: aiResult.scanHash,
       name: aiResult.card_name_english || aiResult.card_name || 'Unknown',
       number: aiResult.card_number || '-',
@@ -1260,7 +1261,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
 
       <div className="rc-history-list">
         {isScanning ? <div className="rc-skeleton-row"><div className="history-thumb-fallback" /><div><strong>Scanning...</strong><small>Running OCR + verify + pricing</small></div></div> : null}
-        {filteredItems.slice(0, 20).map((h, i) => <div key={h.scanHash + i} className="rc-history-item">
+        {filteredItems.slice(0, 20).map((h) => <div key={h.id || h.scanHash} className="rc-history-item">
           <button className="rc-history-main" onClick={() => h.result && setAiResult(h.result)}>
             {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
             <div>
@@ -1269,7 +1270,13 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
               <div className="rc-price-badge">{h.price} {h.currency}</div><small>{h.result?.set_number_verified ? 'Verified' : 'Unverified'}</small>
             </div>
           </button>
-          <button className="rc-swipe-delete" onClick={() => setLiveItems((prev) => { const target = prev[i]; if (target?.thumb) revokeObjectUrl(target.thumb); return prev.filter((_, idx) => idx !== i) })}>Delete</button>
+          <button className="rc-swipe-delete" onClick={() => setLiveItems((prev) => {
+            const next = prev.filter((item) => item.id !== h.id)
+            const removed = prev.find((item) => item.id === h.id)
+            if (removed?.thumb) revokeObjectUrl(removed.thumb)
+            setRunningTotal(Number(next.reduce((sum, item) => sum + Number(item.price || 0), 0).toFixed(2)))
+            return next
+          })}>Delete</button>
         </div>)}
         {!liveItems.length && !isScanning ? <span className="muted">No scans yet.</span> : null}
       </div>
@@ -1400,4 +1407,8 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
+
+
 
