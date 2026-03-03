@@ -1143,7 +1143,22 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
       const verifyMs = Math.round(performance.now() - tVerifyStart)
       setScanTimers((t) => ({ ...t, verifyMs }))
 
-      // Turbo v2: cached + timeout pricing fetch
+      finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } }
+
+      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: compressedB64, resultSnapshot: finalResult }
+
+      if (scanMode !== 'raw' && (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified)) {
+        const blockedHistory = { ...baseHistory, status: 'blocked_unverified_setid' }
+        setScanHistory((prev) => [blockedHistory, ...prev].slice(0, 500))
+        await emitTelemetry('event', blockedHistory, 'scanner-events.jsonl')
+        setAiResult(finalResult)
+        const elapsed = Math.round(performance.now() - startedAt)
+        setLastScanMs(elapsed)
+        setAiStatus(`Scan incomplete: set number could not be auto-verified. Blocked until verified. (${elapsed} ms)` )
+        setIsScanning(false)
+        return
+      }
+      // Turbo v2: cached + timeout pricing fetch (only for verified scans)
       const pricingPromise = (async () => {
         const tPriceStart = performance.now()
         const cachedPricing = getCachedPricing(finalResult)
@@ -1169,21 +1184,6 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
         }
       })()
 
-      finalResult = { ...finalResult, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } }
-
-      const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: compressedB64, resultSnapshot: finalResult }
-
-      if (scanMode !== 'raw' && (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified)) {
-        const blockedHistory = { ...baseHistory, status: 'blocked_unverified_setid' }
-        setScanHistory((prev) => [blockedHistory, ...prev].slice(0, 500))
-        await emitTelemetry('event', blockedHistory, 'scanner-events.jsonl')
-        setAiResult(finalResult)
-        const elapsed = Math.round(performance.now() - startedAt)
-        setLastScanMs(elapsed)
-        setAiStatus(`Scan incomplete: set number could not be auto-verified. Blocked until verified. (${elapsed} ms)` )
-        setIsScanning(false)
-        return
-      }
       const historyEntry = { ...baseHistory, status: 'verified' }
       setScanHistory((prev) => [historyEntry, ...prev].slice(0, 500))
       setScanCache((prev) => ({ ...prev, [scanHash]: { ts: historyEntry.ts, result: finalResult } }))
@@ -1412,6 +1412,8 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
+
 
 
 
