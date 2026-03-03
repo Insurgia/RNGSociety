@@ -214,6 +214,7 @@ function ScannerTab({ coreMode = false }) {
   const [runningTotal, setRunningTotal] = useState(0)
   const [lastScanMs, setLastScanMs] = useState(null)
   const [scanTimers, setScanTimers] = useState({ firstPassMs: null, verifyMs: null, priceMs: null })
+  const [cameraPrompted, setCameraPrompted] = useState(false)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -229,7 +230,6 @@ function ScannerTab({ coreMode = false }) {
   useEffect(() => { localStorage.setItem('rng_pricing_currency', pricingCurrency) }, [pricingCurrency])
   useEffect(() => { localStorage.setItem('rng_price_cache_v1', JSON.stringify(priceCache)) }, [priceCache])
 
-  useEffect(() => { ensureCameraReady() }, [])
 
   // Safety net: if scan is verified but pricing is missing, fetch it in-band.
   useEffect(() => {
@@ -303,16 +303,6 @@ function ScannerTab({ coreMode = false }) {
 
       const ok = await ensureCameraReady()
       if (!ok) return
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setAiStatus('Camera API unavailable in this browser.')
-        return
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play().catch(() => {})
-      }
       setLiveScanOn(true)
       setAiStatus('Live scan started.')
 
