@@ -248,6 +248,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
   const seenHashesRef = React.useRef(new Set())
   const seenCardKeysRef = React.useRef(new Map())
   const liveBusyRef = React.useRef(false)
+  const scanBusyRef = React.useRef(false)
   const objectUrlsRef = React.useRef(new Set())
 
   const trackObjectUrl = (url) => {
@@ -1042,6 +1043,8 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
     if (!file) return setAiStatus('Pick a card image first.')
     if (devMode && !aiApiKey) { setAiStatus('Add API key first.'); return }
     if (spentToday >= dailyBudgetCap) { setAiStatus(`Daily cap reached (${dailyBudgetCap}).`); return }
+    if (scanBusyRef.current) { setAiStatus('Scan already in progress. Please wait...'); return }
+    scanBusyRef.current = true
     setIsScanning(true)
 
     setAiStatus('Preparing image + checking cache...')
@@ -1204,6 +1207,8 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
       else setAiStatus(`AI identify failed: ${e.message || 'unknown error'}`)
       setLastScanMs(Math.round(performance.now() - startedAt))
       setIsScanning(false)
+    } finally {
+      scanBusyRef.current = false
     }
   }
 
