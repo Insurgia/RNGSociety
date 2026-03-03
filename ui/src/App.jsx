@@ -388,9 +388,9 @@ function ScannerTab({ coreMode = false }) {
     if (!telemetryDir) return false
     const fileHandle = await telemetryDir.getFileHandle(name, { create: true })
     const file = await fileHandle.getFile()
-    const existing = await file.text()
-    const w = await fileHandle.createWritable()
-    await w.write(existing + JSON.stringify(payload) + '\n')
+    const w = await fileHandle.createWritable({ keepExistingData: true })
+    await w.seek(file.size)
+    await w.write(JSON.stringify(payload) + '\n')
     await w.close()
     return true
   }
