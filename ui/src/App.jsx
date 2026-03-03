@@ -492,8 +492,13 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
         const parsed = lines.map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
         setScanHistory(parsed.slice(-500).reverse())
       } catch {}
-    } catch {
-      setTelemetryStatus('Telemetry folder connection cancelled.')
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        setTelemetryStatus('Telemetry folder connection cancelled.')
+      } else {
+        const msg = String(err?.message || err || 'unknown error')
+        setTelemetryStatus(`Telemetry connect failed: ${msg}`)
+      }
     }
   }
 
@@ -554,6 +559,17 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
     return d
   }
 
+  const fetchTextWithTimeout = async (url, timeoutMs = 3200) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      return await res.text()
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   const autoResolveSetNumber = async (ai) => {
     const rawName = ai.card_name_native || ai.card_name_english || ai.card_name || ''
     const rawSet = ai.set_name_native || ai.set_name_english || ai.set_name || ''
@@ -566,7 +582,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
     try {
       const q1 = encodeURIComponent(baseQuery)
       const url1 = 'https://r.jina.ai/http://pkmncards.com/?s=' + q1 + '&sort=date&display=images'
-      const text1 = await fetch(url1).then((r) => r.text())
+      const text1 = await fetchTextWithTimeout(url1)
 
       const nums1 = [...text1.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
       let unique = [...new Set(nums1)]
@@ -574,7 +590,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
       if (!unique.length && rawNumber) {
         const q2 = encodeURIComponent(baseQuery + ' ' + rawNumber)
         const url2 = 'https://r.jina.ai/http://pkmncards.com/?s=' + q2 + '&sort=date&display=images'
-        const text2 = await fetch(url2).then((r) => r.text())
+        const text2 = await fetchTextWithTimeout(url2)
         const nums2 = [...text2.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
         unique = [...new Set(nums2)]
       }
@@ -601,8 +617,9 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
 
       if (unique.length === 1) return { number: unique[0], verified: true, reason: 'live-single-candidate', from: rawNumber || null }
       return { number: rawNumber, verified: false, reason: 'live-ambiguous' }
-    } catch {
-      return { number: rawNumber, verified: !!rawNumber, reason: 'live-source-unavailable' }
+    } catch (err) {
+      const timedOut = err?.name === 'AbortError'
+      return { number: rawNumber, verified: !!rawNumber, reason: timedOut ? 'live-source-timeout' : 'live-source-unavailable' }
     }
   }
 
@@ -1383,67 +1400,4 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
