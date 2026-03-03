@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-02 9:42 PM | scanner-rarecandy-parity-pass2'
+const BUILD_STAMP = 'BUILD 2026-03-02 10:09 PM | scanner-controls-search-pricing'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -178,7 +178,7 @@ function safeJsonParse(text) {
   }
 }
 
-function ScannerTab({ coreMode = false }) {
+function ScannerTab({ coreMode = false, searchQuery = '' }) {
   const devMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dev') === '1'
   const [referenceDb, setReferenceDb] = useState(() => { try { return JSON.parse(localStorage.getItem(DB_KEY) || '[]') } catch { return [] } })
   const [dbStatus, setDbStatus] = useState('Ready.')
@@ -210,6 +210,7 @@ function ScannerTab({ coreMode = false }) {
   const [tcgScrapeData, setTcgScrapeData] = useState(null)
   const [liveScanOn, setLiveScanOn] = useState(false)
   const [liveSpeed, setLiveSpeed] = useState('2x')
+  const [scanMode, setScanMode] = useState('verified')
   const [liveItems, setLiveItems] = useState([])
   const [runningTotal, setRunningTotal] = useState(0)
   const [lastScanMs, setLastScanMs] = useState(null)
@@ -384,6 +385,13 @@ function ScannerTab({ coreMode = false }) {
 
   const todayKey = new Date().toISOString().slice(0, 10)
   const spentToday = useMemo(() => scanHistory.filter((h) => String(h.ts || '').startsWith(todayKey)).reduce((a, b) => a + Number(b.estimatedCost || 0), 0), [scanHistory, todayKey])
+
+  const filteredItems = useMemo(() => {
+    const q = String(searchQuery || '').trim().toLowerCase()
+    if (!q) return liveItems
+    return liveItems.filter((h) => `${h.name || ''} ${h.number || ''} ${h.set || ''}`.toLowerCase().includes(q))
+  }, [liveItems, searchQuery])
+
 
   const appendJsonl = async (name, payload) => {
     if (!telemetryDir) return false
@@ -1048,7 +1056,7 @@ function ScannerTab({ coreMode = false }) {
       const tVerifyStart = performance.now()
       const hasStructuredNumber = !!(finalResult.card_number && String(finalResult.card_number).includes('/'))
       const strongPass = Number(finalResult.confidence || 0) >= Math.max(85, Number(aiThreshold || 85))
-      const requiresStrictVerify = true
+      const requiresStrictVerify = scanMode !== 'raw'
 
       if (requiresStrictVerify) {
         try {
@@ -1112,7 +1120,7 @@ function ScannerTab({ coreMode = false }) {
 
       const baseHistory = { ts: new Date().toISOString(), hash: scanHash, card: finalResult.card_name || null, card_number: finalResult.card_number || null, set_number_verified: finalResult.set_number_verified, set_number_resolution_reason: finalResult.set_number_resolution_reason, set_number_original: finalResult.set_number_original || null, set_number_before_crop: finalResult.set_number_before_crop || null, set_number_crop_raw: finalResult.set_number_crop_raw || null, set_number_crop_confidence: Number(finalResult.set_number_crop_confidence || 0), set_number_crop_error: finalResult.set_number_crop_error || null, set_number_crop_image_bytes: Number(finalResult.set_number_crop_image_bytes || 0), model: finalResult.routedModel, confidence: Number(finalResult.confidence || 0), escalated: !!finalResult.escalated, estimatedCost: Number(totalCost.toFixed(6)), lang: finalResult.detected_language || languageMode, imageDataUrl: compressedB64, resultSnapshot: finalResult }
 
-      if (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified) {
+      if (scanMode !== 'raw' && (!finalResult.card_number || !String(finalResult.card_number).includes('/') || !finalResult.set_number_verified)) {
         const blockedHistory = { ...baseHistory, status: 'blocked_unverified_setid' }
         setScanHistory((prev) => [blockedHistory, ...prev].slice(0, 500))
         await emitTelemetry('event', blockedHistory, 'scanner-events.jsonl')
@@ -1185,7 +1193,7 @@ function ScannerTab({ coreMode = false }) {
           <button className={`rc-pill ${liveSpeed === '1x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('1x') }}>1.5x</button>
           <button className={`rc-pill ${liveSpeed === '2x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('2x') }}>2x</button>
           <button className={`rc-pill ${liveSpeed === '3x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('3x') }}>3x</button>
-          <span className="rc-pill rc-mode">Scanning: Raw</span>
+          <button className={`rc-pill rc-mode ${scanMode === 'raw' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setScanMode(scanMode === 'raw' ? 'verified' : 'raw') }}>{scanMode === 'raw' ? 'Scanning: Raw' : 'Scanning: Verified'}</button>
         </div>
       </div>
     </button>
@@ -1203,13 +1211,13 @@ function ScannerTab({ coreMode = false }) {
 
       <div className="rc-history-list">
         {isScanning ? <div className="rc-skeleton-row"><div className="history-thumb-fallback" /><div><strong>Scanning...</strong><small>Running OCR + verify + pricing</small></div></div> : null}
-        {liveItems.slice(0, 20).map((h, i) => <div key={h.scanHash + i} className="rc-history-item">
+        {filteredItems.slice(0, 20).map((h, i) => <div key={h.scanHash + i} className="rc-history-item">
           <button className="rc-history-main" onClick={() => h.result && setAiResult(h.result)}>
             {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
             <div>
               <strong>{h.name}</strong>
               <small>{h.number} ï {h.set}</small>
-              <small>{h.price} {h.currency} ï {h.result?.set_number_verified ? 'Verified' : 'Unverified'}</small>
+              <div className="rc-price-badge">{h.price} {h.currency}</div><small>{h.result?.set_number_verified ? 'Verified' : 'Unverified'}</small>
             </div>
           </button>
           <button className="rc-swipe-delete" onClick={() => setLiveItems((prev) => prev.filter((_, idx) => idx !== i))}>Delete</button>
@@ -1295,6 +1303,7 @@ function LabEnvironment({ onLaunchTool }) {
 export default function App() {
   const [tab, setTab] = useState('singles')
   const [theme, setTheme] = useState(() => localStorage.getItem('rng-theme') === 'light' ? 'light' : 'dark')
+  const [scannerSearch, setScannerSearch] = useState('')
   useEffect(() => { document.documentElement.classList.toggle('light', theme === 'light'); localStorage.setItem('rng-theme', theme) }, [theme])
 
   const tabs = [
@@ -1321,7 +1330,7 @@ export default function App() {
       </div>
     </header> : null}
 
-    {tab !== 'scanner' ? <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav> : <div className="scanner-topbar rc-topbar"><button className="btn btn-sm" onClick={() => setTab('singles')}>‚Üê</button><div className="rc-search-shell"><input className="rc-search" placeholder="Search cards, sets, numbers" /></div><button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button></div>}
+    {tab !== 'scanner' ? <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav> : <div className="scanner-topbar rc-topbar"><button className="btn btn-sm" onClick={() => setTab('singles')}>‚Üê</button><div className="rc-search-shell"><input className="rc-search" placeholder="Search cards, sets, numbers" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} /></div><button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button></div>}
 
     {false ? <section className="hero-strip">
       <div>
@@ -1337,7 +1346,7 @@ export default function App() {
     {tab === 'singles' && <SinglesTab />}
     {tab === 'purchase' && <PurchaseTab />}
     {tab === 'bags' && <BagBuilderTab />}
-    {tab === 'scanner' && <ScannerTab />}
+    {tab === 'scanner' && <ScannerTab searchQuery={scannerSearch} />}
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
