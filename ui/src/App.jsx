@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-02 10:18 PM | scanner-control-clicks-hotfix2'
+const BUILD_STAMP = 'BUILD 2026-03-03 12:11 AM | scanner-recent-scan-fix'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -387,8 +387,8 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
       name: aiResult.card_name_english || aiResult.card_name || 'Unknown',
       number: aiResult.card_number || '-',
       set: aiResult.set_name_english || aiResult.set_name || '-',
-      price: Number(aiResult.pricing.primary.value || 0),
-      currency: aiResult.pricing.primary.currency || 'USD',
+      price: Number(aiResult?.pricing?.primary?.value || 0),
+      currency: aiResult?.pricing?.primary?.currency || pricingCurrency || 'USD',
       thumb: aiResult.previewUrl || null,
       result: aiResult,
     }
