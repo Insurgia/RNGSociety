@@ -224,3 +224,8 @@ input, textarea, select { width: 100%; padding: 9px; border-radius: 8px; border:
 
 .rc-price-badge { display:inline-block; margin-top:2px; margin-bottom:2px; padding:2px 8px; border-radius:999px; background:#14532d; border:1px solid #22c55e; color:#dcfce7; font-weight:800; font-size:12px; }
 
+
+/* scanner controls must stay clickable over tap-to-scan surface */
+.rc-cam-overlay { pointer-events: none; }
+.rc-bottom-controls, .rc-bottom-controls * { pointer-events: auto; }
+
