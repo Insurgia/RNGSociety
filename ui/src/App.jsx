@@ -1197,6 +1197,17 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
 
       pricingPromise.then((pricing) => {
         setAiResult((prev) => prev && prev.scanHash === scanHash ? { ...prev, pricing } : prev)
+        setScanCache((prev) => {
+          const cached = prev?.[scanHash]
+          if (!cached?.result) return prev
+          return {
+            ...prev,
+            [scanHash]: {
+              ...cached,
+              result: { ...cached.result, pricing },
+            },
+          }
+        })
       })
       const suffix = route === 'error' ? ' (telemetry failed)' : ''
       setAiStatus(`AI identify complete (${finalResult.routedModel}${finalResult.escalated ? ', escalated' : ''}). Est. cost: ${historyEntry.estimatedCost}${suffix} | ${elapsed} ms`)
