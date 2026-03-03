@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-02 7:14 PM | scanner-hotfix-camera-init'
+const BUILD_STAMP = 'BUILD 2026-03-02 9:42 PM | scanner-rarecandy-parity-pass2'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -1175,61 +1175,57 @@ function ScannerTab({ coreMode = false }) {
     </Card>
   }
 
-  return <section className="scanner-rc">
-    <div className="scanner-rc-topbar">
-      <button className="rc-back" onClick={() => window.history.back()}>?</button>
-      <div className="rc-search-wrap"><input className="rc-search" placeholder="Search card name or #" /></div>
-    </div>
-
-    <div className="scanner-rc-canvas">
-      <button className="live-cam-wrap tap-scan rc-cam-shell" onClick={async () => { const f = await captureLiveFrame(); if (f) await runAiIdentify(f); else setAiStatus('Camera not ready yet.'); }}>
-        <video ref={videoRef} className="live-cam rc-live-cam" playsInline muted autoPlay />
-        <div className="cam-overlay">
-          <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
-          <div className="overlay-instruction">Tap Anywhere to Scan</div>
-          <div className="rc-bottom-controls">
-            <button className={`rc-pill ${liveSpeed === '1x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('1x') }}>1.5x</button>
-            <button className={`rc-pill ${liveSpeed === '2x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('2x') }}>2x</button>
-            <button className={`rc-pill ${liveSpeed === '3x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('3x') }}>3x</button>
-            <span className="rc-pill rc-mode">Scanning: Raw</span>
-          </div>
+  return <section className="scanner-rc-screen">
+    <button className="live-cam-wrap tap-scan rc-cam-shell" onClick={handleFrameTapScan}>
+      <video ref={videoRef} className="live-cam rc-live-cam" playsInline muted autoPlay />
+      <div className="cam-overlay rc-cam-overlay">
+        <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
+        <div className="rc-tap-overlay">Tap Anywhere to Scan</div>
+        <div className="rc-bottom-controls">
+          <button className={`rc-pill ${liveSpeed === '1x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('1x') }}>1.5x</button>
+          <button className={`rc-pill ${liveSpeed === '2x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('2x') }}>2x</button>
+          <button className={`rc-pill ${liveSpeed === '3x' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setLiveSpeed('3x') }}>3x</button>
+          <span className="rc-pill rc-mode">Scanning: Raw</span>
         </div>
-      </button>
-
-      <div className="rc-utility-row">
-        <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
-        <label className="capture-drop rc-upload"><input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /><span>Upload</span></label>
-        <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
       </div>
-      <div className="muted">{aiStatus || 'Ready.'}</div>
-    </div>
+    </button>
 
     <section className="rc-bottom-sheet">
       <div className="rc-sheet-head">
         <strong>Recent scans</strong>
         <div className="rc-sheet-actions">
           <button className="rc-clear" onClick={() => { setLiveItems([]); setRunningTotal(0) }}>CLEAR</button>
-          <span className="rc-total">Total: {runningTotal} {aiResult?.pricing?.primary?.currency || pricingCurrency}</span>
+          <span className="rc-total">${Number(runningTotal || 0).toFixed(2)} total</span>
         </div>
       </div>
 
-      <div className="history-list">
-        {isScanning ? <div className="history-item history-skeleton"><div className="history-thumb-fallback" /><div><strong>Scanning...</strong><small>Running OCR + verify + pricing</small></div></div> : null}
-        {liveItems.slice(0, 20).map((h, i) => <button key={h.scanHash + i} className="history-item" onClick={() => h.result && setAiResult(h.result)}>
-          {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
-          <div>
-            <strong>{h.name}</strong>
-            <small>{h.number} ? {h.set}</small>
-            <small>{h.price} {h.currency} ? {h.result?.set_number_verified ? 'Verified' : 'Unverified'}</small>
-          </div>
-        </button>)}
+      <div className="rc-status-line">{aiStatus || 'Ready. Frame card, then tap anywhere to scan.'}</div>
+
+      <div className="rc-history-list">
+        {isScanning ? <div className="rc-skeleton-row"><div className="history-thumb-fallback" /><div><strong>Scanning...</strong><small>Running OCR + verify + pricing</small></div></div> : null}
+        {liveItems.slice(0, 20).map((h, i) => <div key={h.scanHash + i} className="rc-history-item">
+          <button className="rc-history-main" onClick={() => h.result && setAiResult(h.result)}>
+            {h.thumb ? <img src={h.thumb} alt={h.name} /> : <div className="history-thumb-fallback">No Img</div>}
+            <div>
+              <strong>{h.name}</strong>
+              <small>{h.number} • {h.set}</small>
+              <small>{h.price} {h.currency} • {h.result?.set_number_verified ? 'Verified' : 'Unverified'}</small>
+            </div>
+          </button>
+          <button className="rc-swipe-delete" onClick={() => setLiveItems((prev) => prev.filter((_, idx) => idx !== i))}>Delete</button>
+        </div>)}
         {!liveItems.length && !isScanning ? <span className="muted">No scans yet.</span> : null}
+      </div>
+
+      <div className="rc-utility-row" style={{ marginTop: 8 }}>
+        <button className="btn" onClick={ensureCameraReady}>Enable camera</button>
+        <label className="capture-drop rc-upload"><input type="file" accept="image/*" onChange={(e) => runAiIdentify(e.target.files?.[0])} /><span>Upload</span></label>
+        <button className="btn" onClick={runCardmarketPrimary} disabled={!aiResult}>Refresh price</button>
       </div>
     </section>
   </section>
 
 }
-
 function ToolPreview({ target }) {
   if (target === 'singles') return <SinglesTab />
   if (target === 'purchase') return <PurchaseTab />
