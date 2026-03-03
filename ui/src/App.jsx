@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-02 10:09 PM | scanner-controls-search-pricing'
+const BUILD_STAMP = 'BUILD 2026-03-02 10:13 PM | scanner-button-click-fix'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -1184,7 +1184,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
   }
 
   return <section className="scanner-rc-screen">
-    <button className="live-cam-wrap tap-scan rc-cam-shell" onClick={handleFrameTapScan}>
+    <div className="live-cam-wrap tap-scan rc-cam-shell" role="button" tabIndex={0} onClick={handleFrameTapScan} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleFrameTapScan() } }}>
       <video ref={videoRef} className="live-cam rc-live-cam" playsInline muted autoPlay />
       <div className="cam-overlay rc-cam-overlay">
         <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
@@ -1196,9 +1196,7 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
           <button className={`rc-pill rc-mode ${scanMode === 'raw' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setScanMode(scanMode === 'raw' ? 'verified' : 'raw') }}>{scanMode === 'raw' ? 'Scanning: Raw' : 'Scanning: Verified'}</button>
         </div>
       </div>
-    </button>
-
-    <section className="rc-bottom-sheet">
+    </div>`r`n`r`n    <section className="rc-bottom-sheet">
       <div className="rc-sheet-head">
         <strong>Recent scans</strong>
         <div className="rc-sheet-actions">
