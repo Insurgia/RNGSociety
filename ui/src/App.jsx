@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BUILD_STAMP = 'BUILD 2026-03-02 6:35 PM | scanner-live-scan'
+const BUILD_STAMP = 'BUILD 2026-03-02 7:14 PM | scanner-hotfix-camera-init'
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`
@@ -214,7 +214,6 @@ function ScannerTab({ coreMode = false }) {
   const [runningTotal, setRunningTotal] = useState(0)
   const [lastScanMs, setLastScanMs] = useState(null)
   const [scanTimers, setScanTimers] = useState({ firstPassMs: null, verifyMs: null, priceMs: null })
-  const [cameraPrompted, setCameraPrompted] = useState(false)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -269,11 +268,13 @@ function ScannerTab({ coreMode = false }) {
     }
   }
 
+  const cameraPromptedRef = React.useRef(false)
+
   useEffect(() => {
-    if (cameraPrompted) return
-    setCameraPrompted(true)
+    if (cameraPromptedRef.current) return
+    cameraPromptedRef.current = true
     ensureCameraReady()
-  }, [cameraPrompted])
+  }, [])
 
   const captureLiveFrame = async () => {
     const ok = await ensureCameraReady()
