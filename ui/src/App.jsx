@@ -214,6 +214,7 @@ function ScannerTab({ coreMode = false }) {
   const [runningTotal, setRunningTotal] = useState(0)
   const [lastScanMs, setLastScanMs] = useState(null)
   const [scanTimers, setScanTimers] = useState({ firstPassMs: null, verifyMs: null, priceMs: null })
+  const [isIdentifying, setIsIdentifying] = useState(false)
 
   useEffect(() => { localStorage.setItem(DB_KEY, JSON.stringify(referenceDb)) }, [referenceDb])
   useEffect(() => { localStorage.setItem('rng_ai_key', aiApiKey) }, [aiApiKey])
@@ -996,8 +997,8 @@ function ScannerTab({ coreMode = false }) {
     const startedAt = performance.now()
     setScanTimers({ firstPassMs: null, verifyMs: null, priceMs: null })
     if (!file) return setAiStatus('Pick a card image first.')
-    if (devMode && !aiApiKey) return setAiStatus('Add API key first.')
-    if (spentToday >= dailyBudgetCap) return setAiStatus(`Daily cap reached ($${dailyBudgetCap}).`)
+    if (devMode && !aiApiKey) { setAiStatus('Add API key first.'); return }
+    if (spentToday >= dailyBudgetCap) { setAiStatus(`Daily cap reached (${dailyBudgetCap}).`); return }
 
     setAiStatus('Preparing image + checking cache...')
     setAiResult(null)
@@ -1339,7 +1340,7 @@ export default function App() {
       </div>
     </header> : null}
 
-    {tab !== 'scanner' ? <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav> : <div className="scanner-topbar"><button className="btn btn-sm" onClick={() => setTab('singles')}>Back</button><div className="scanner-topbar-title">Scanner</div><button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button></div>}
+    {tab !== 'scanner' ? <nav className="tabs tabs5 clean-tabs">{tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav> : <div className="scanner-topbar rc-topbar"><button className="btn btn-sm" onClick={() => setTab('singles')}>←</button><div className="rc-search-shell"><input className="rc-search" placeholder="Search cards, sets, numbers" /></div><button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button></div>}
 
     {tab === 'scanner' ? <section className="hero-strip">
       <div>

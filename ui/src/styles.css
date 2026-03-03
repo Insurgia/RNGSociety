@@ -160,3 +160,39 @@ input, textarea, select { width: 100%; padding: 9px; border-radius: 8px; border:
   .scanner-fullscreen-mode .card { border: 0; border-radius: 0; padding: 10px; }
   .scan-shell { gap: 8px; }
 }
+
+.rc-topbar { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.rc-search-shell { flex:1; padding:1px; border-radius:999px; background: linear-gradient(90deg,#22d3ee,#22c55e,#a78bfa); }
+.rc-search { border:0; border-radius:999px; background:#0b1220; color:#e2e8f0; padding:10px 14px; }
+.scanner-fullscreen-mode { max-width:100%; padding:6px; min-height:100dvh; background: radial-gradient(circle at top,#0b1220 0%,#020617 40%,#01040c 100%); }
+.rc-scanner-screen { display:grid; gap:10px; min-height:calc(100dvh - 96px); }
+.rc-camera-wrap { position:relative; border-radius:22px; overflow:hidden; border:1px solid #1f2937; background:#000; min-height:52dvh; }
+.rc-live-cam { width:100%; height:100%; min-height:52dvh; object-fit:cover; filter: contrast(1.04) saturate(1.02); }
+.rc-cam-overlay .corner { width:36px; height:36px; border-color:#2af598; border-width:4px; }
+.rc-tap-overlay { position:absolute; inset:0; display:grid; place-items:center; font-size:26px; font-weight:800; color:#d1fae5; text-shadow:0 3px 24px rgba(0,0,0,.8); pointer-events:none; }
+.rc-camera-controls { position:absolute; left:12px; right:12px; bottom:10px; display:flex; gap:8px; flex-wrap:wrap; }
+.rc-pill { border:1px solid #334155; border-radius:999px; background:rgba(2,6,23,.78); color:#e2e8f0; padding:7px 12px; font-size:12px; font-weight:700; }
+.rc-pill.active { border-color:#22c55e; color:#86efac; }
+.rc-pill.mode { margin-left:auto; background:rgba(15,23,42,.92); }
+.rc-sheet { background:linear-gradient(180deg,#040b18 0%,#020617 100%); border:1px solid #1f2937; border-radius:18px; padding:12px; }
+.rc-sheet-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+.rc-sheet-head h3 { margin:0; font-size:18px; }
+.rc-head-actions { display:flex; gap:8px; align-items:center; }
+.rc-pill.clear { letter-spacing:.04em; }
+.rc-total-pill { border:1px solid #16a34a; border-radius:999px; padding:7px 12px; background:#052e16; color:#86efac; font-weight:700; }
+.rc-status-line { margin:8px 0 10px; color:#93c5fd; font-size:12px; }
+.rc-history-list { display:grid; gap:8px; max-height:32dvh; overflow:auto; }
+.rc-history-item { display:flex; gap:8px; align-items:center; border:1px solid #263040; border-radius:12px; background:#0b1220; padding:6px; }
+.rc-history-main { flex:1; display:grid; grid-template-columns:56px 1fr; gap:8px; align-items:center; background:transparent; border:0; color:inherit; text-align:left; }
+.rc-history-main img,.history-thumb-fallback { width:56px; height:56px; border-radius:10px; object-fit:cover; border:1px solid #334155; }
+.rc-history-main small { display:block; color:#94a3b8; }
+.rc-swipe-delete { border:1px solid #7f1d1d; border-radius:999px; background:#1f0a0a; color:#fca5a5; padding:8px 10px; font-size:11px; }
+.rc-upload-inline { margin-top:10px; padding:10px; }
+.rc-result-mini { margin-top:8px; border:1px solid #334155; border-radius:10px; padding:8px; background:#0b1220; font-size:12px; }
+.rc-skeleton-row { display:grid; grid-template-columns:56px 1fr; gap:8px; border:1px solid #263040; border-radius:12px; padding:8px; background:#0b1220; }
+.sk-thumb { width:56px; height:56px; border-radius:10px; background:linear-gradient(90deg,#1e293b,#334155,#1e293b); background-size:200% 100%; animation:shimmer 1.2s linear infinite; }
+.sk-lines { display:grid; gap:6px; align-content:center; }
+.sk-lines span { height:10px; border-radius:999px; background:linear-gradient(90deg,#1e293b,#334155,#1e293b); background-size:200% 100%; animation:shimmer 1.2s linear infinite; }
+.sk-lines span:nth-child(1){ width:75%; } .sk-lines span:nth-child(2){ width:55%; } .sk-lines span:nth-child(3){ width:35%; }
+@keyframes shimmer { from{background-position:200% 0;} to{background-position:-200% 0;} }
+@media (max-width:720px){ .rc-tap-overlay{font-size:22px;} .rc-camera-wrap,.rc-live-cam{min-height:46dvh;} }
