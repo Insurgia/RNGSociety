@@ -542,12 +542,12 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
   }
 
   const extractSetNumber = (text) => {
-    const m = String(text || '').match(/(\d{1,3}\/\d{2,3})/)
-    return m ? m[1] : null
+    const m = String(text || '').toUpperCase().match(/\b([A-Z]{0,4}\d{1,3})\s*\/\s*([A-Z]{0,4}\d{1,3})\b/)
+    return m ? `${m[1]}/${m[2]}` : null
   }
 
   const normalizeSetNumber = (text) => {
-    const m = String(text || '').match(/(\d{1,3})\s*\/\s*(\d{2,3})/)
+    const m = String(text || '').toUpperCase().match(/\b([A-Z]{0,4}\d{1,3})\s*\/\s*([A-Z]{0,4}\d{1,3})\b/)
     return m ? `${m[1]}/${m[2]}` : null
   }
 
@@ -585,14 +585,14 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
       const url1 = 'https://r.jina.ai/http://pkmncards.com/?s=' + q1 + '&sort=date&display=images'
       const text1 = await fetchTextWithTimeout(url1)
 
-      const nums1 = [...text1.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
+      const nums1 = [...text1.matchAll(/\b([A-Z]{0,4}\d{1,3}\/[A-Z]{0,4}\d{1,3})\b/g)].map((m) => m[1])
       let unique = [...new Set(nums1)]
 
       if (!unique.length && rawNumber) {
         const q2 = encodeURIComponent(baseQuery + ' ' + rawNumber)
         const url2 = 'https://r.jina.ai/http://pkmncards.com/?s=' + q2 + '&sort=date&display=images'
         const text2 = await fetchTextWithTimeout(url2)
-        const nums2 = [...text2.matchAll(/\b(\d{1,3}\/\d{2,3})\b/g)].map((m) => m[1])
+        const nums2 = [...text2.matchAll(/\b([A-Z]{0,4}\d{1,3}\/[A-Z]{0,4}\d{1,3})\b/g)].map((m) => m[1])
         unique = [...new Set(nums2)]
       }
 
