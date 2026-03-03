@@ -1070,41 +1070,56 @@ function ScannerTab({ coreMode = false, searchQuery = '' }) {
       setAiResult({ ...finalResult, estimatedCost: Number(totalCost.toFixed(6)), cached: false, pricing: { ...(finalResult.pricing || {}), reason: 'pricing_pending' } })
       setAiStatus('Card detected. Enriching verification + price...')
 
-      // Turbo v2: conditional verify path (skip heavy crop/resolve when already strong)
+      // Turbo v2: conditional verify path (prefer low-latency resolver first when model pass is strong)
       const tVerifyStart = performance.now()
       const hasStructuredNumber = !!(finalResult.card_number && String(finalResult.card_number).includes('/'))
       const strongPass = Number(finalResult.confidence || 0) >= Math.max(85, Number(aiThreshold || 85))
       const requiresStrictVerify = scanMode !== 'raw'
 
       if (requiresStrictVerify) {
-        try {
-          finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
-          const cropBlob = await cropSetIdRegion(file)
-          const cropDataUrl = await blobToDataUrl(cropBlob)
-          const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl) || {}
-          const cropRaw = String(cropRead?.card_number || '').trim()
-          const cropNum = normalizeSetNumber(cropRaw) || extractSetNumber(cropRaw)
+        let resolvedEarly = false
+
+        if (hasStructuredNumber && strongPass) {
+          const quickResolved = await autoResolveSetNumber(finalResult)
           finalResult = {
             ...finalResult,
-            set_number_crop_raw: cropRaw || null,
-            set_number_crop_confidence: Number(cropRead?.confidence || 0),
-            set_number_crop_image_bytes: Number(cropBlob?.size || 0),
+            card_number: quickResolved.number || finalResult.card_number,
+            set_number_verified: !!quickResolved.verified,
+            set_number_resolution_reason: quickResolved.reason,
+            set_number_original: quickResolved.from || null,
           }
-          if (cropNum) {
-            finalResult = { ...finalResult, card_number: cropNum }
-          }
-        } catch (err) {
-          finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
+          resolvedEarly = !!quickResolved.verified
         }
 
-        if (finalResult.card_number && Number(finalResult.set_number_crop_confidence || 0) >= 85) {
-          finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'crop-authoritative', set_number_original: finalResult.set_number_before_crop || null }
-        } else {
-          const resolved = await autoResolveSetNumber(finalResult)
-          finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+        if (!resolvedEarly) {
+          try {
+            finalResult = { ...finalResult, set_number_crop_attempted: true, set_number_before_crop: finalResult.card_number || null }
+            const cropBlob = await cropSetIdRegion(file)
+            const cropDataUrl = await blobToDataUrl(cropBlob)
+            const cropRead = await callVisionSetId(aiPrimaryModel, cropDataUrl) || {}
+            const cropRaw = String(cropRead?.card_number || '').trim()
+            const cropNum = normalizeSetNumber(cropRaw) || extractSetNumber(cropRaw)
+            finalResult = {
+              ...finalResult,
+              set_number_crop_raw: cropRaw || null,
+              set_number_crop_confidence: Number(cropRead?.confidence || 0),
+              set_number_crop_image_bytes: Number(cropBlob?.size || 0),
+            }
+            if (cropNum) {
+              finalResult = { ...finalResult, card_number: cropNum }
+            }
+          } catch (err) {
+            finalResult = { ...finalResult, set_number_crop_error: String(err?.message || err || 'crop-pass-failed') }
+          }
+
+          if (finalResult.card_number && Number(finalResult.set_number_crop_confidence || 0) >= 85) {
+            finalResult = { ...finalResult, set_number_verified: true, set_number_resolution_reason: 'crop-authoritative', set_number_original: finalResult.set_number_before_crop || null }
+          } else {
+            const resolved = await autoResolveSetNumber(finalResult)
+            finalResult = { ...finalResult, card_number: resolved.number || finalResult.card_number, set_number_verified: !!resolved.verified, set_number_resolution_reason: resolved.reason, set_number_original: resolved.from || null }
+          }
         }
       }
-
       const verifyMs = Math.round(performance.now() - tVerifyStart)
       setScanTimers((t) => ({ ...t, verifyMs }))
 
@@ -1368,6 +1383,7 @@ export default function App() {
     {tab === 'lab' && <LabEnvironment onLaunchTool={setTab} />}
   </main>
 }
+
 
 
 
